@@ -125,6 +125,8 @@ bash install_flash_attn.sh
 
 **v2.9.4**：**多分辨率同时训练**（`multires_per_image`）——Anima LoRA / Finetune 可在同一 epoch 内按多个 free-fit 档位（如 `512,1024`）各训一次；样本数按档位成倍增加，请下调 epoch。说明见 [`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md)。
 
+**v2.9.5**：修复 SDXL LoRA 因未注册 `blocks_to_swap` 开训即崩；本机 `/api/run` → `sdxl_train_network.py` 10-step smoke 通过；品牌 Logo / 封面 / 横幅全面换新，并清除上游 Next Trainer 旧图。
+
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="训练监控仪表盘" width="920" />
 </p>
@@ -269,6 +271,7 @@ powershell -ExecutionPolicy Bypass -File .\install-cn.ps1
 
 | 日期 | 版本 |
 |------|------|
+| 2026-08-08 | **v2.9.5** — **SDXL LoRA** 开训崩溃修复 + smoke；**品牌**：新 Logo / 封面 / 横幅，清除上游 Next Trainer 旧图 · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-06 | **v2.9.4** — **多分辨率同时训练**（`multires_per_image`）：同 epoch 多档 free-fit；预览正提示词按行出多图 · 见 [CHANGELOG.md](CHANGELOG.md)、[`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md) |
 | 2026-08-05 | **v2.9.3** — GSoKR BF16 合并修正；Next Story Trainer 品牌素材；英文 i18n（含 Schema Markdown 说明）；联系方式 / Github → 本仓库；LoRA 训练页介绍对齐 · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-04 | **v2.9.2** — **严重**：停止后再开训可能双训练（旧进程未杀净）已修；监控页 Loss/学习率/参数与当前任务、TensorBoard 对齐 · 见 [CHANGELOG.md](CHANGELOG.md) |

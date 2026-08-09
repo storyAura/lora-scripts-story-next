@@ -22,7 +22,7 @@
 | AutoDL 显式端口被静默 fallback | 平台映射失效 | 显式指定端口时占用应失败（待 Issue 落地） |
 | 浏览器自动打开子服务裸端口 | 用户记错地址 | 打开主站 + 路径入口 |
 
-讨论与草案：[Discussion #53](https://github.com/wochenlong/lora-scripts-next/discussions/53)、`docs/design/ports/`。
+讨论与草案：[Discussion #53](https://github.com/wochenlong/lora-scripts-next/discussions/53)。
 
 ## 训练与后端
 

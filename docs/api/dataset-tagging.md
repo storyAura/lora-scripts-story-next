@@ -1,6 +1,6 @@
 # 数据集打标 API（Phase 1）
 
-> 打标页进度条与后台任务状态。完整 #40 范围见 `docs/issues/40-dataset-tagging-backend-alignment.md`。
+> 打标页进度条与后台任务状态。相关跟踪见 [Issue #40](https://github.com/wochenlong/lora-scripts-next/issues/40)。
 
 ## GET `/api/tagger/status`
 

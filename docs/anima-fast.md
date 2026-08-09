@@ -8,9 +8,7 @@ Anima Fast 是基于 [sorryhyun/anima_lora](https://github.com/sorryhyun/anima_l
 
 ![Anima LoRA Fast 模式训练页](../assets/readme/screenshot-anima-fast.png)
 
-> 侧栏 **标准模式** 为 Kohya 路径（`/lora/sd3.html`）；**Fast 模式** 为本页。页顶含安装引导与 upstream 致谢。
-
-> 维护者合并前清单：[`docs/anima-fast-merge-checklist.md`](./anima-fast-merge-checklist.md)
+> 侧栏 **标准模式** 为 Kohya 路径（`/lora/sd3.html`）；**Fast 模式** 为本页。页顶含安装引导与 upstream 致谢。上游仓库：[sorryhyun/anima_lora](https://github.com/sorryhyun/anima_lora)（MIT License）。
 
 ---
 

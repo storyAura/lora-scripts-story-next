@@ -6,7 +6,6 @@
 |------|------|
 | `cli/tagger.ps1` 等 | 秋叶系辅助脚本（打标、合并、 interrogation） |
 | `cli/tensorboard.ps1` | 单独启动 TensorBoard（GUI 内已集成入口） |
-| `cli/start_lora_monitor.sh` | 旧监控服务，依赖已移除的 `train_status_server.py`，**已废弃** |
 | `notebooks/*.ipynb` | 上游示例笔记本，非 WebUI 主流程 |
 
 秋叶 CLI 训练脚本已迁至 `scripts/cli/`（根目录保留转发器）。

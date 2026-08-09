@@ -4,6 +4,7 @@
 venv
 .venv*
 __pycache__
+.pytest_cache/
 
 output/*
 !output/.keep
@@ -76,3 +77,7 @@ vendor/anima_lora/
 
 # Local tagger model weights (downloaded at runtime)
 tagger-models/
+
+# Prefetched tokenizer vocab (portable/offline); regenerate via scripts/prefetch_sdxl_tokenizer.py
+tokenizer-cache/
+

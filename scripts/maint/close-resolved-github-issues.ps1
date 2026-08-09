@@ -1,6 +1,6 @@
 # Close GitHub issues already fixed on main (v2.5.2+).
 # Auth: User-level GITHUB_TOKEN (see doc/local/AGENT_INTERNAL.md), or gh auth login.
-# Usage: powershell -ExecutionPolicy Bypass -File scripts/close-resolved-github-issues.ps1
+# Usage: powershell -ExecutionPolicy Bypass -File scripts/maint/close-resolved-github-issues.ps1
 
 $ErrorActionPreference = "Stop"
 $repo = "wochenlong/lora-scripts-next"

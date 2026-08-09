@@ -11,7 +11,7 @@
 | [@SupermarKleet](https://github.com/SupermarKleet) | UI / 美术 | 界面设计、品牌与素材（看板娘、Logo 等） | **否** | 交付设计稿与资产，由开发落地到 `frontend/dist` 或 patch |
 | [@ageless-h](https://github.com/ageless-h) | 后端开发 | Anima / sd-scripts 后端、整合包相关修复 | 是 | **未来约 1～2 周较忙，暂不接新任务**；紧急项由项目负责人协调 |
 | [@niangao2331](https://github.com/niangao2331) | 开发（vibe coding） | 打标器、Dataset Tag Editor | 是 | 若实践后难以独立维护该模块，可改任 **Issue 分诊**（仍参与协作，调整职责） |
-| [@MikumikuDAIFans](https://github.com/MikumikuDAIFans) | 开发（vibe coding） | 训练引擎相关、**端口与路径治理**（草案见 `docs/design/ports/`） | 是 | 先小步落地 P0；方案为草案，合入前经 Discussion / PR review |
+| [@MikumikuDAIFans](https://github.com/MikumikuDAIFans) | 开发（vibe coding） | 训练引擎相关、**端口与路径治理**（见 [Discussion #53](https://github.com/wochenlong/lora-scripts-next/discussions/53)） | 是 | 先小步落地 P0；方案为草案，合入前经 Discussion / PR review |
 
 ### 领域负责人（DRI）
 
@@ -68,7 +68,7 @@
 1. `main` 拉分支 → PR → @wochenlong review → 合并。  
 2. 契约路径改动须在 PR 中说明并已审批。  
 3. 讨论保持开放；可交付工作以 Issue 为准。  
-4. 设计草案在 `docs/design/`；用户文档在 `docs/`。
+4. 设计讨论走 GitHub Discussion / Issue；用户文档在 `docs/`。
 
 ---
 

@@ -643,7 +643,7 @@ class NetworkTrainer:
             torch.__version__,
             bool(args.deepspeed),
             bool(args.torch_compile),
-            args.blocks_to_swap,
+            getattr(args, "blocks_to_swap", None),
             args.base_model_quantization,
             bool(getattr(args, "anima_compile_blocks", False)),
             self.is_train_text_encoder(args),
@@ -1889,6 +1889,16 @@ def setup_parser() -> argparse.ArgumentParser:
         "--fsdp2_cpu_offload",
         action="store_true",
         help="offload FSDP2 frozen-base shards to pinned CPU memory between uses",
+    )
+    # Shared NetworkTrainer.train() validates FSDP2 against blocks_to_swap. DiT
+    # trainers also register this via add_dit_training_arguments(); keep a copy
+    # here so SD/SDXL network training does not crash on a missing Namespace attr.
+    parser.add_argument(
+        "--blocks_to_swap",
+        type=int,
+        default=None,
+        help="[EXPERIMENTAL] number of blocks to swap to CPU during forward/backward "
+        "(supported by DiT trainers; ignored by U-Net SD/SDXL paths that lack block swap)",
     )
 
     parser.add_argument(

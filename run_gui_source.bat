@@ -31,14 +31,22 @@ if errorlevel 1 (
 )
 
 :launch
-if exist "venv\Scripts\activate.bat" call "venv\Scripts\activate.bat"
-if exist "python\python.exe" set "PATH=%~dp0python;%PATH%"
-
+:: Prefer the project interpreter by absolute path. Bare `python` after
+:: activate.bat can still hit system Python312 when PATH order is wrong
+:: (common on Windows), which loads CPU torch / mismatched site-packages.
 if exist "venv\Scripts\python.exe" (
-    "venv\Scripts\python.exe" scripts\prefetch_default_tagger.py --if-missing
+    set "PYTHON_EXE=%~dp0venv\Scripts\python.exe"
+) else if exist "python\python.exe" (
+    set "PYTHON_EXE=%~dp0python\python.exe"
+    set "PATH=%~dp0python;%PATH%"
+) else (
+    echo [ERROR] No project Python found. Run install-cn.ps1 first.
+    pause
+    exit /b 1
 )
 
-python gui.py %*
+"%PYTHON_EXE%" scripts\prefetch_default_tagger.py --if-missing
+"%PYTHON_EXE%" gui.py %*
 set "EXIT_CODE=%errorlevel%"
 if %EXIT_CODE% neq 0 pause
 exit /b %EXIT_CODE%

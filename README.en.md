@@ -125,6 +125,8 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 **v2.9.4:** **Same-epoch multi-resolution training** (`multires_per_image`) — Anima LoRA / Finetune can train each image once per free-fit tier (e.g. `512,1024`) within one epoch; sample count scales with the number of tiers, so lower the epoch count. See [`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md).
 
+**v2.9.5:** Fixed SDXL LoRA crash on missing `blocks_to_swap`; local 10-step smoke passed; brand assets refreshed (logo/cover/banner) and upstream Next Trainer images purged.
+
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="Train Monitor Dashboard" width="920" />
 </p>
@@ -178,6 +180,7 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 | Date | Version |
 |------|---------|
+| 2026-08-08 | **v2.9.5** — **SDXL LoRA** crash fix + smoke; **brand** refresh (new logo/cover/banner), purge upstream Next Trainer images · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-06 | **v2.9.4** — **same-epoch multi-resolution** (`multires_per_image`); multi-line preview prompts · see [CHANGELOG.md](CHANGELOG.md), [`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md) |
 | 2026-08-05 | **v2.9.3** — GSoKR BF16 merge fix; Next Story Trainer brand assets; English i18n; contact / GitHub → this repo · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-04 | **v2.9.2** — dual-training after stop fixed; monitor Loss / LR / params bound to active task · see [CHANGELOG.md](CHANGELOG.md) |

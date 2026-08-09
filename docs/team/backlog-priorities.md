@@ -13,7 +13,7 @@
 | **P0 / P1 / P2** | 建议优先级（见 [priority.md](priority.md) 草案） |
 | **已修** | main 或近期 Release 已含修复，发版前需回归验证 |
 | **流程** | 讨论/文档/分工，不直接写功能代码 |
-| **草案** | 仓库 `docs/issues/` 有草稿，GitHub 可能尚未建 Issue |
+| **草案** | 尚未正式开 GitHub Issue，或仅有 Discussion / 本地草稿 |
 
 **速览**：[发版 TOP](#发版-top下一版-7z--release) · [排期 TOP](#排期-top接下来-12-个迭代) · [总表](#总表)
 
@@ -61,10 +61,10 @@
 | ENG-01 | Accelerate 续训缺 step 元数据 | @wochenlong | 已修? | | 核对 #52 是否已关闭；main 有 fallback |
 | ENG-02 | Windows torch_compile / Triton 踩坑 | @wochenlong | P1 | | 整合包多已自动剔除 compile |
 | **打标（新）** |
-| [#40](https://github.com/wochenlong/lora-scripts-next/issues/40) | 数据集打标 backend（API、引擎扩展、测试） | @niangao2331 | P1 | | 不写 frontend/dist；见 `docs/issues/40-*.md` |
+| [#40](https://github.com/wochenlong/lora-scripts-next/issues/40) | 数据集打标 backend（API、引擎扩展、测试） | @niangao2331 | P1 | | 不写 frontend/dist；API 见 `docs/api/dataset-tagging.md` |
 | TAG-01 | #40 与 #41 边界、合并顺序 | @wochenlong + 年糕 | 流程 | | |
 | **标签编辑 / 数据集工作区** |
-| #41 | 数据集工作区（scan、caption 编辑、合一 Tab） | @wochenlong / 年糕 | P2 | | **草案**：`docs/issues/41-*.md`，待开 GH Issue |
+| #41 | 数据集工作区（scan、caption 编辑、合一 Tab） | @wochenlong / 年糕 | P2 | | **草案**：待开 GH Issue |
 | #41-draft | 在 GitHub 正式创建 Issue #41 并挂 Depends on #40 | 年糕 / @wochenlong | P1 | | 流程项 |
 | **Flash Attention 2** |
 | [#26](https://github.com/wochenlong/lora-scripts-next/issues/26) | 全路径支持 FA2（源码 / 整合包 / Docker） | @wochenlong | P2 | | 整合包当前不支持 FA2，见 `docs/flash-attention.md` |
@@ -194,7 +194,7 @@
 | 序 | 项 | 负责人 |
 |----|-----|--------|
 | 7 | **G-3：#50 第一期**（不等 P-13 / 全量反代） | @MikumikuDAIFans |
-| 8 | **G-4：#53 硬规则** 写入 `docs/design/ports/` 或 `docs/team/` | @wochenlong |
+| 8 | **G-4：#53 硬规则** 写入 `docs/team/` 或对应 Issue | @wochenlong |
 | 9 | **PORT-14** PRT-007/008 验收 | @MikumikuDAIFans |
 | 10 | **T-03 + T-02**、**T-01** | 你 + 年糕 |
 

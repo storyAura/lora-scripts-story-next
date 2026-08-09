@@ -1,4 +1,5 @@
 import ast
+import sys
 from pathlib import Path
 
 
@@ -29,3 +30,19 @@ def test_stable_sdxl_cache_text_encoder_signature_matches_vendor_base():
     )
 
     assert stable_args == base_args
+
+
+def test_vendor_sdxl_parser_registers_blocks_to_swap():
+    """FSDP2 preflight in NetworkTrainer.train() reads args.blocks_to_swap."""
+    vendor = ROOT / "vendor" / "sd-scripts"
+    sys.path.insert(0, str(vendor))
+    try:
+        import sdxl_train_network as sdxl_mod
+
+        args = sdxl_mod.setup_parser().parse_args([])
+    finally:
+        if sys.path and sys.path[0] == str(vendor):
+            sys.path.pop(0)
+
+    assert hasattr(args, "blocks_to_swap")
+    assert args.blocks_to_swap is None

@@ -3,6 +3,23 @@
 本文件记录 **storyAura/lora-scripts-story-next** 的发行说明（v2.9.0 及更早条目沿袭上游 wochenlong/lora-scripts-next）；kohya-ss/sd-scripts 的变更请见其仓库。
 
 ---
+## v2.9.5 — 2026-08-08
+
+### SDXL LoRA
+
+- **修复开训即崩**：共享 `NetworkTrainer` 的 FSDP2 预检会读取 `args.blocks_to_swap`，但 SD/SDXL 的 argparse 未注册该参数，导致 `sdxl-lora` 在数据集准备后立刻 `AttributeError` 退出。
+- **改动**：在 `vendor/sd-scripts/train_network.py` 的共享 parser 注册 `--blocks_to_swap`（默认 `None`），预检改为 `getattr` 兜底；`tests/test_sdxl_stable_trainer_contract.py` 增加回归。
+
+### 品牌素材
+
+- 全面替换为新版 **Next Story Trainer** Logo / 首页图 / Changelog 横幅 / README 封面 / favicon。
+- **清除上游残留**：删除 `guide-mascot.webp`、`assets/cover.png`、`assets/readme/logo.svg`、以及 `next-trainer-cover.png` / `next-trainer-social.png` / `anima-cover.png` 等旧 Next Trainer 兼容图。
+
+### 验证
+
+- 本机经 `submit_training_config` / `/api/run` → accelerate → `vendor/sd-scripts/sdxl_train_network.py` 完成 10-step SDXL LoRA smoke（NoobAI XL eps、512、bf16），写出 `sdxl_smoke.safetensors`。
+
+---
 ## v2.9.4 — 2026-08-06
 
 ### 多分辨率同时训练（`multires_per_image`）
@@ -26,7 +43,7 @@
 
 ### 品牌与发布身份
 
-- **品牌素材**：落地 `Next Story Trainer` Logo / favicon / 首页图 / Changelog 横幅 / README 封面；公开文档见 `docs/brand-design-tokens.md`、`docs/brand-refresh-change-plan.md`。
+- **品牌素材**：落地 `Next Story Trainer` Logo / favicon / 首页图 / Changelog 横幅 / README 封面；公开文档见 `docs/brand-design-tokens.md`。
 - 全站 `sd-trainer-brand.js?v=` 与 `VERSION` 对齐（不再钉死旧的 2.8.35）；`sd-nav-i18n` 继续走 SPA 缓存键，避免双份 bundle。
 - 首页 Author / Github、侧栏 Github 指向 `storyAura/lora-scripts-story-next`；关于页联系方式改为 `storyaura@outlook.com` 与 QQ 群 `917336925`。
 - LoRA 训练页介绍与 hydration 对齐（Anima / Flux / Stable Diffusion），去掉旧的「新手/专家 TIP」残留。

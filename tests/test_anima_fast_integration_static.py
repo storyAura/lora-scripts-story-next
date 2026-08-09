@@ -194,8 +194,7 @@ class AnimaFastStaticIntegrationTests(unittest.TestCase):
         self.assertIn("MIT License", text)
         self.assertIn("7.1 s/step", text)
         self.assertIn("2.8 s/step", text)
-        merge = Path("docs/anima-fast-merge-checklist.md").read_text(encoding="utf-8")
-        self.assertIn("sorryhyun/anima_lora", merge)
+        self.assertIn("sorryhyun/anima_lora", text)
 
 
 if __name__ == "__main__":

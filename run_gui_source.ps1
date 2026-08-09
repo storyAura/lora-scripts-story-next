@@ -6,17 +6,21 @@ $Env:PYTHONUTF8 = "1"
 $Env:MIKAZUKI_PORT = "28000"
 $Env:MIKAZUKI_SCHEMA_HOT_RELOAD = "1"
 
-if (Test-Path -Path "venv\Scripts\activate") {
-    Write-Host -ForegroundColor green "Activating virtual environment..."
-    .\venv\Scripts\activate
+# Prefer project interpreter by absolute path. Activating then calling bare
+# `python` can still resolve to system Python312 when PATH order is wrong.
+if (Test-Path -LiteralPath "venv\Scripts\python.exe") {
+    Write-Host -ForegroundColor green "Using project venv Python..."
+    $pythonExe = (Resolve-Path -LiteralPath "venv\Scripts\python.exe").Path
 }
-elseif (Test-Path -Path "python\python.exe") {
+elseif (Test-Path -LiteralPath "python\python.exe") {
     Write-Host -ForegroundColor green "Using python from python folder..."
-    $py_path = (Get-Item "python").FullName
-    $env:PATH = "$py_path;$env:PATH"
+    $pythonExe = (Resolve-Path -LiteralPath "python\python.exe").Path
+    $env:PATH = "$(Split-Path -Parent $pythonExe);$env:PATH"
 }
 else {
-    Write-Host -ForegroundColor Blue "No virtual environment found, using system python..."
+    Write-Host -ForegroundColor Red "[ERROR] No project Python found. Run install-cn.ps1 first."
+    exit 1
 }
 
-python gui.py @args
+& $pythonExe gui.py @args
+exit $LASTEXITCODE
