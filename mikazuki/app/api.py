@@ -73,6 +73,7 @@ from mikazuki.tasks import tm
 from mikazuki.train_log_hub import hub as train_log_hub
 from mikazuki.train_queue import train_queue
 from mikazuki.app.queue_api import router as train_queue_router
+from mikazuki.app.infer_api import router as infer_router
 from mikazuki.utils import train_utils
 from mikazuki.training_validation import (
     TrainingConfigurationError,
@@ -94,6 +95,7 @@ from mikazuki.utils.tk_window import (open_directory_selector,
 router = APIRouter()
 router.include_router(dataset_editor_router)
 router.include_router(train_queue_router)
+router.include_router(infer_router)
 
 ANIMA_TRAIN_TYPES = {"anima-lora", "sd3-lora", "anima-finetune"}
 ANIMA_FINETUNE_TYPE = "anima-finetune"
@@ -273,6 +275,7 @@ def get_sample_prompts(config: dict, model_train_type: str = "sd-lora") -> Tuple
     sample_steps = config.pop("sample_steps", default_steps)
     sample_sampler = config.pop("sample_sampler", None)
     sample_scheduler = config.pop("sample_scheduler", None)
+    sample_flow_shift = config.pop("sample_flow_shift", None)
     randomly_choice_prompt = config.pop("randomly_choice_prompt", False)
 
     if randomly_choice_prompt:
@@ -299,6 +302,7 @@ def get_sample_prompts(config: dict, model_train_type: str = "sd-lora") -> Tuple
         seed=sample_seed,
         sampler=sample_sampler if use_anima_defaults else None,
         scheduler=sample_scheduler if use_anima_defaults else None,
+        flow_shift=sample_flow_shift if use_anima_defaults else None,
     )
     # Keep a readable positive blob for callers that only need presence / logging.
     positive_joined = "\n".join(train_utils.split_sample_prompt_lines(positive_prompts))

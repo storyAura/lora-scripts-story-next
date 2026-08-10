@@ -26,14 +26,18 @@ class PromptLineSchedulerTests(unittest.TestCase):
             cfg=4.5,
             steps=40,
             seed=42,
-            sampler="euler",
+            sampler="heun",
             scheduler="beta",
+            flow_shift=5.0,
         )
         self.assertIn(" --sch beta", line)
+        self.assertIn(" --ss heun", line)
+        self.assertIn(" --fs 5.0", line)
         parsed = line_to_prompt_dict(line)
         self.assertEqual(parsed["scheduler"], "beta")
-        self.assertEqual(parsed["sample_sampler"], "euler")
+        self.assertEqual(parsed["sample_sampler"], "heun")
         self.assertEqual(parsed["sample_steps"], 40)
+        self.assertEqual(float(parsed["flow_shift"]), 5.0)
 
     def test_no_scheduler_keeps_line_unchanged(self):
         line = train_utils.build_sample_prompt_line("1girl", "lowres")
@@ -78,6 +82,17 @@ class BetaSigmaScheduleTests(unittest.TestCase):
         shifted = get_sample_sigmas(steps, shift, "beta")
         expected = (base * shift) / (1 + (shift - 1) * base)
         self.assertTrue(torch.allclose(shifted, expected, atol=1e-6))
+
+    def test_normal_endpoints_and_differs_from_simple(self):
+        steps = 40
+        normal = get_sample_sigmas(steps, 1.0, "normal")
+        simple = get_sample_sigmas(steps, 1.0, "simple")
+        self.assertEqual(normal.shape, (steps + 1,))
+        self.assertAlmostEqual(float(normal[0]), 1.0, places=5)
+        self.assertAlmostEqual(float(normal[-1]), 0.0, places=6)
+        self.assertFalse(torch.allclose(normal, simple))
+        diffs = normal[:-1] - normal[1:]
+        self.assertTrue(bool(torch.all(diffs > 0)))
 
 
 if __name__ == "__main__":

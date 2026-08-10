@@ -97,6 +97,7 @@
                 output_dir: Schema.string().role('filepicker', { type: "folder" }).default("./output").description("模型保存文件夹"),
                 save_model_as: Schema.union(["safetensors", "pt", "ckpt"]).default("safetensors").description("模型保存格式"),
                 save_precision: Schema.union(["fp16", "float", "bf16"]).default("fp16").description("模型保存精度"),
+                no_metadata: Schema.boolean().default(false).description("导出时不写入训练元数据"),
                 save_every_n_epochs: Schema.number().default(2).description("每 N epoch（轮）自动保存一次模型"),
                 save_every_n_steps: Schema.number().min(1).description("每 N 步自动保存一次模型（与 save_every_n_epochs 二选一即可）"),
                 save_state: Schema.boolean().default(false).description("保存训练状态 配合 `resume` 参数可以继续从某个状态训练"),

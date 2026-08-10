@@ -150,7 +150,7 @@ T-LoRA（Timestep-Dependent LoRA）是一种改进的 LoRA 方法。普通 LoRA 
 
 **Q: T-LoRA 的模型文件可以直接用普通 LoRA 加载吗？**
 
-可以。T-LoRA 的模型权重格式与普通 LoRA 兼容，推理时使用完整 rank（不做时间步动态调整），可以在任何支持 LoRA 的推理工具中正常加载。
+可以。T-LoRA 的模型权重格式与普通 LoRA 兼容，推理时使用完整 rank（不做时间步动态调整），可以在任何支持 LoRA 的推理工具中正常加载。新版本导出的权重不再包含 `*.tlora_*_state` buffer（超参写在 `ss_tlora_*` metadata 里）；旧权重若在 Comfy 里刷出 `tlora_*_state` / `lora key not loaded` 警告，可忽略，不影响正常 LoRA 加载。
 
 **Q: 使用 Automagic / CAME 训练时 loss 变成 NaN？**
 

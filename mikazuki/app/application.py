@@ -170,6 +170,7 @@ async def add_cache_control_header(request, call_next):
         or path.endswith("/assets/tagger-progress.js")
         or path.endswith("/assets/sd-trainer-brand.js")
         or path.endswith("/assets/sd-trainer-queue.js")
+        or path.endswith("/assets/sd-trainer-infer.js")
         or path.endswith("/assets/dataset-editor.js")
         or path.endswith("/assets/dataset-editor.css")
         or path.endswith("/assets/dataset-editor-entry.js")

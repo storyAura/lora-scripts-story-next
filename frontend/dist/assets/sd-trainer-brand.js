@@ -785,3 +785,13 @@
   s.defer = true;
   document.head.appendChild(s);
 })();
+
+/** Quick-infer loader - sd-trainer-infer.js is served no-cache like this file. */
+(function () {
+  if (document.getElementById('sd-trainer-infer-script')) return;
+  var s = document.createElement('script');
+  s.id = 'sd-trainer-infer-script';
+  s.src = '/assets/sd-trainer-infer.js';
+  s.defer = true;
+  document.head.appendChild(s);
+})();

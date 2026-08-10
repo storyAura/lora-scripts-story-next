@@ -21,6 +21,7 @@ PREVIEW_UI_FIELDS = (
     "sample_steps",
     "sample_sampler",
     "sample_scheduler",
+    "sample_flow_shift",
     "randomly_choice_prompt",
     "sample_at_first",
     "sample_every_n_epochs",
@@ -199,6 +200,7 @@ def build_sample_prompt_line(
     seed: int = 2333,
     sampler: str | None = None,
     scheduler: str | None = None,
+    flow_shift: float | None = None,
 ) -> str:
     positive = normalize_sample_prompt_text(positive)
     negative = normalize_sample_prompt_text(negative)
@@ -210,6 +212,8 @@ def build_sample_prompt_line(
         line += f" --ss {normalize_sample_prompt_text(sampler)}"
     if scheduler:
         line += f" --sch {normalize_sample_prompt_text(scheduler)}"
+    if flow_shift is not None and str(flow_shift).strip() != "":
+        line += f" --fs {normalize_sample_prompt_text(flow_shift)}"
     return line
 
 
@@ -224,6 +228,7 @@ def build_sample_prompt_file_content(
     seed: int = 2333,
     sampler: str | None = None,
     scheduler: str | None = None,
+    flow_shift: float | None = None,
 ) -> str:
     """Build one or more Kohya sample-prompt lines (newline = another preview image)."""
     positives = split_sample_prompt_lines(positive)
@@ -244,6 +249,7 @@ def build_sample_prompt_file_content(
             seed=base_seed + index,
             sampler=sampler,
             scheduler=scheduler,
+            flow_shift=flow_shift,
         )
         for index, entry in enumerate(positives)
     ]

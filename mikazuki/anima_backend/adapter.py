@@ -222,6 +222,7 @@ UI_ONLY_FIELDS = {
     "sample_steps",
     "sample_sampler",
     "sample_scheduler",
+    "sample_flow_shift",
     "randomly_choice_prompt",
     "prompt_file",
     "enable_debug_options",

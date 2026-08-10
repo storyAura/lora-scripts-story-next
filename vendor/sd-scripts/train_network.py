@@ -1300,6 +1300,14 @@ class NetworkTrainer:
                 vae_name = os.path.basename(vae_name)
             metadata["ss_vae_name"] = vae_name
 
+        # Anima / DiT trainers expose qwen3; persist basename so WebUI quick-infer can auto-fill TE.
+        qwen3_path = getattr(args, "qwen3", None)
+        if qwen3_path:
+            qwen_name = qwen3_path
+            if os.path.exists(qwen_name):
+                qwen_name = os.path.basename(qwen_name)
+            metadata["ss_qwen3_name"] = qwen_name
+
         metadata = {k: str(v) for k, v in metadata.items()}
 
         # make minimum metadata for filtering
@@ -1382,9 +1390,14 @@ class NetworkTrainer:
             metadata["ss_steps"] = str(steps)
             metadata["ss_epoch"] = str(epoch_no)
 
-            metadata_to_save = minimum_metadata if args.no_metadata else metadata
-            sai_metadata = self.get_sai_model_spec(args)
-            metadata_to_save.update(sai_metadata)
+            if args.no_metadata:
+                # Product UX: "不带元数据" — omit ss_* / modelspec. Network save_weights may
+                # still attach sshs_* hashes for safetensors indexing.
+                metadata_to_save = {}
+            else:
+                metadata_to_save = metadata
+                sai_metadata = self.get_sai_model_spec(args)
+                metadata_to_save.update(sai_metadata)
 
             unwrapped_nw.save_weights(ckpt_file, save_dtype, metadata_to_save)
             if args.huggingface_repo_id is not None:

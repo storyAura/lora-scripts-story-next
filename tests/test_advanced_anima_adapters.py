@@ -616,6 +616,8 @@ def test_timestep_lora_inference_path_masks_rank_and_is_not_mergeable() -> None:
         key: value.detach().clone()
         for key, value in network.state_dict().items()
     }
+    assert not any(key.endswith(".tlora_min_rank_state") for key in state)
+    assert not any(key.endswith(".tlora_rank_schedule_state") for key in state)
 
     target = FakeDiT(5)
     loaded_network, loaded_state = module.create_network_from_weights(
@@ -626,6 +628,8 @@ def test_timestep_lora_inference_path_masks_rank_and_is_not_mergeable() -> None:
         target,
         weights_sd=state,
         for_inference=True,
+        tlora_min_rank=1,
+        tlora_rank_schedule="linear",
     )
     loaded_network.apply_to([], target, False, True)
     loaded_network.load_state_dict(loaded_state, strict=False)
@@ -638,6 +642,73 @@ def test_timestep_lora_inference_path_masks_rank_and_is_not_mergeable() -> None:
     assert not loaded_network.is_mergeable()
     with pytest.raises(RuntimeError, match="cannot be merged"):
         loaded_network.merge_to([], target, loaded_state)
+
+
+def test_timestep_lora_save_omits_state_buffers_and_reloads_from_metadata(tmp_path: Path) -> None:
+    module = importlib.import_module("networks.tlora_anima")
+    source = FakeDiT(4)
+    network = module.create_network(
+        1.0,
+        4,
+        4,
+        None,
+        [],
+        source,
+        None,
+        tlora_min_rank=2,
+        tlora_rank_schedule="linear",
+        tlora_orthogonal_init=True,
+    )
+    network.apply_to([], source, False, True)
+    out = tmp_path / "tlora.safetensors"
+    network.save_weights(str(out), dtype=torch.float32, metadata={})
+
+    from safetensors.torch import load_file
+    from library import train_util
+
+    weights = load_file(str(out))
+    assert not any(k.endswith(".tlora_min_rank_state") for k in weights)
+    assert not any(k.endswith(".tlora_rank_schedule_state") for k in weights)
+    meta = train_util.load_metadata_from_safetensors(str(out))
+    assert meta.get("ss_tlora_min_rank") == "2"
+    assert meta.get("ss_tlora_rank_schedule") == "linear"
+    assert meta.get("ss_tlora_orthogonal_init") == "true"
+
+    target = FakeDiT(4)
+    loaded, _ = module.create_network_from_weights(
+        1.0,
+        str(out),
+        None,
+        [],
+        target,
+        for_inference=True,
+    )
+    assert loaded.tlora_min_rank == 2
+    assert loaded.tlora_rank_schedule == "linear"
+    assert loaded.tlora_orthogonal_init is True
+
+
+def test_timestep_lora_loads_legacy_state_buffers_without_kwargs() -> None:
+    module = importlib.import_module("networks.tlora_anima")
+    legacy = {
+        "lora_unet_blocks_0_proj.lora_down.weight": torch.randn(3, 5),
+        "lora_unet_blocks_0_proj.lora_up.weight": torch.randn(5, 3),
+        "lora_unet_blocks_0_proj.alpha": torch.tensor(3.0),
+        "lora_unet_blocks_0_proj.tlora_min_rank_state": torch.tensor(2, dtype=torch.int64),
+        "lora_unet_blocks_0_proj.tlora_rank_schedule_state": torch.tensor(0, dtype=torch.int64),
+    }
+    target = FakeDiT(5)
+    loaded, _ = module.create_network_from_weights(
+        1.0,
+        None,
+        None,
+        [],
+        target,
+        weights_sd=legacy,
+        for_inference=True,
+    )
+    assert loaded.tlora_min_rank == 2
+    assert loaded.tlora_rank_schedule == "linear"
 
 
 def test_timestep_lora_rejects_invalid_schedule() -> None:

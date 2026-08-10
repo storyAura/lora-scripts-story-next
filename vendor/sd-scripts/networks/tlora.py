@@ -162,10 +162,13 @@ class TLoRAModule(lora_network.LoRAModule):
             self.module_dropout,
             "module_dropout",
         )
+        # Non-persistent: keep runtime attrs only. Persisting these buffers used to
+        # flood safetensors with *.tlora_*_state keys that ComfyUI cannot load.
+        # Anima save_weights writes ss_tlora_* metadata instead.
         self.register_buffer(
             "tlora_min_rank_state",
             torch.tensor(self.tlora_min_rank, dtype=torch.int64),
-            persistent=True,
+            persistent=False,
         )
         self.register_buffer(
             "tlora_rank_schedule_state",
@@ -173,7 +176,7 @@ class TLoRAModule(lora_network.LoRAModule):
                 0 if self.tlora_rank_schedule == "linear" else 1,
                 dtype=torch.int64,
             ),
-            persistent=True,
+            persistent=False,
         )
         self.org_module_ref = [org_module]
         self.enabled = True

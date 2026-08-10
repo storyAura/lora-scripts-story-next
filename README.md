@@ -129,6 +129,8 @@ bash install_flash_attn.sh
 
 **v2.9.6**：**开训前磁盘预检**——粗估输出权重 / 磁盘缓存 / 日志余量，空间不足则结构化拒绝（`disk_space`），避免 `Errno 28`；紧急绕过 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1`。
 
+**v2.9.7**：侧栏 **快速推理**（Anima）：选近期 LoRA、自动匹配底模、训练占用 GPU 时禁用；保存设置可「导出时不写入训练元数据」；训练预览支持 heun / normal / `sample_flow_shift`；T-LoRA 导出不再带 `*_state` buffer。冒烟：`venv\Scripts\python.exe -m pytest -q tests\test_infer_smoke.py`。
+
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="训练监控仪表盘" width="920" />
 </p>
@@ -273,6 +275,7 @@ powershell -ExecutionPolicy Bypass -File .\install-cn.ps1
 
 | 日期 | 版本 |
 |------|------|
+| 2026-08-11 | **v2.9.7** — **快速推理**（Anima）+ 底模自动匹配 + `no_metadata`；预览 heun/normal/flow_shift；T-LoRA 去 `*_state`；冒烟 `tests/test_infer_smoke.py` · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-10 | **v2.9.6** — **开训前磁盘预检**：不足则结构化拒绝，避免 `Errno 28`；绕过 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-08 | **v2.9.5** — **SDXL LoRA** 开训崩溃修复 + smoke；**品牌**：新 Logo / 封面 / 横幅，清除上游 Next Trainer 旧图 · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-06 | **v2.9.4** — **多分辨率同时训练**（`multires_per_image`）：同 epoch 多档 free-fit；预览正提示词按行出多图 · 见 [CHANGELOG.md](CHANGELOG.md)、[`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md) |

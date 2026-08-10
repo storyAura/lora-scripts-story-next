@@ -336,28 +336,109 @@ def _beta_ppf(q: np.ndarray, alpha: float, beta: float) -> np.ndarray:
     return np.interp(q, cdf, edges)
 
 
+def _approx_ndtri(p: np.ndarray) -> np.ndarray:
+    """Approximate inverse CDF of standard normal (Acklam's approximation)."""
+    p = np.asarray(p, dtype=np.float64)
+    a = [
+        -3.969683028665376e01,
+        2.209460984245205e02,
+        -2.759285104469687e02,
+        1.383577518672690e02,
+        -3.066479806614716e01,
+        2.506628277459239e00,
+    ]
+    b = [
+        -5.447609879822406e01,
+        1.615858368580409e02,
+        -1.556989798598866e02,
+        6.680131188771972e01,
+        -1.328068155288572e01,
+    ]
+    c = [
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e00,
+        -2.549732539343734e00,
+        4.374664141464968e00,
+        2.938163982698783e00,
+    ]
+    d = [
+        7.784695709041462e-03,
+        3.224671290700398e-01,
+        2.445134137142996e00,
+        3.754408661907416e00,
+    ]
+    plow = 0.02425
+    phigh = 1.0 - plow
+    out = np.empty_like(p)
+    # Lower region
+    mask = p < plow
+    if np.any(mask):
+        q = np.sqrt(-2.0 * np.log(p[mask]))
+        out[mask] = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+        )
+    # Central region
+    mask = (p >= plow) & (p <= phigh)
+    if np.any(mask):
+        q = p[mask] - 0.5
+        r = q * q
+        out[mask] = (
+            (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+        ) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0)
+    # Upper region
+    mask = p > phigh
+    if np.any(mask):
+        q = np.sqrt(-2.0 * np.log(1.0 - p[mask]))
+        out[mask] = -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+        )
+    return out
+
+
 def get_sample_sigmas(steps: int, flow_shift: float, scheduler: str = "simple") -> torch.Tensor:
     """Build the preview sigma schedule: (steps + 1,) fp32 tensor, 1.0 -> 0.0.
 
     "simple" spaces timesteps uniformly; "beta" spaces them by the Beta(0.6, 0.6)
-    inverse CDF (ComfyUI's beta scheduler), concentrating steps near both ends.
+    inverse CDF (ComfyUI's beta scheduler), concentrating steps near both ends;
+    "normal" uses inverse-normal CDF spacing (denser near mid-noise) before shift.
     flow_shift is applied after spacing, matching ComfyUI's scheduler -> model
     shift composition.
 
     Built in fp32 — a bf16 schedule quantizes 30-step dt (~0.033) at ~0.004
     granularity, visibly degrading preview quality.
     """
+    scheduler = (scheduler or "simple").strip().lower()
     if scheduler == "beta":
         # ComfyUI BetaSamplingScheduler defaults: alpha = beta = 0.6.
         ts = 1.0 - np.linspace(0.0, 1.0, steps, endpoint=False)
         base = np.append(_beta_ppf(ts, 0.6, 0.6), 0.0)
         sigmas = torch.from_numpy(base.astype(np.float32))
+    elif scheduler == "normal":
+        # Inverse-normal spacing on (0,1), denser around mid-sigma than simple.
+        u = np.linspace(1.0 / (steps + 1), steps / (steps + 1), steps, dtype=np.float64)
+        z = _approx_ndtri(u)
+        z = (z - z.min()) / (z.max() - z.min() + 1e-12)
+        base = np.append(1.0 - z, 0.0)
+        sigmas = torch.from_numpy(base.astype(np.float32))
     else:
+        if scheduler not in ("simple", ""):
+            logger.warning(f"unknown scheduler '{scheduler}' for sample sigmas, falling back to 'simple'")
         sigmas = torch.linspace(1.0, 0.0, steps + 1, dtype=torch.float32)
     flow_shift = float(flow_shift)
     if flow_shift != 1.0:
         sigmas = (sigmas * flow_shift) / (1 + (flow_shift - 1) * sigmas)
     return sigmas
+
+
+def _normalize_sample_sampler(name: Optional[str]) -> str:
+    text = str(name or "euler").strip().lower()
+    if text in ("euler", "k_euler"):
+        return "euler"
+    if text == "heun":
+        return "heun"
+    logger.warning(f"unknown sample_sampler '{name}', falling back to 'euler'")
+    return "euler"
 
 
 def do_sample(
@@ -373,9 +454,10 @@ def do_sample(
     flow_shift: float = 3.0,
     neg_crossattn_emb: Optional[torch.Tensor] = None,
     scheduler: str = "simple",
+    sampler: str = "euler",
     timestep_callback=None,
 ) -> torch.Tensor:
-    """Generate a sample using Euler discrete sampling for rectified flow.
+    """Generate a sample using rectified-flow discrete sampling (Euler / Heun).
 
     Args:
         height, width: Output image dimensions
@@ -388,14 +470,16 @@ def do_sample(
         guidance_scale: CFG scale (1.0 = no guidance)
         flow_shift: Flow shift parameter for rectified flow
         neg_crossattn_emb: Negative cross-attention embeddings for CFG
-        scheduler: Timestep spacing, "simple" (uniform) or "beta" (Beta(0.6, 0.6))
+        scheduler: Timestep spacing — simple / beta / normal
+        sampler: Integration method — euler or heun (2nd-order RF)
         timestep_callback: Called with the current fp32 sigma (in [0, 1]) before each
-            Euler step, so timestep-aware adapters (T-LoRA rank masking, T-GLoKR time
-            gates) see the same t during preview as during training
+            model evaluation, so timestep-aware adapters (T-LoRA rank masking, T-GLoKR
+            time gates) see the same t during preview as during training
 
     Returns:
         Denoised latents
     """
+    sampler = _normalize_sample_sampler(sampler)
     # Latent shape: (1, 16, 1, H/8, W/8) for single image
     latent_h = height // 8
     latent_w = width // 8
@@ -419,31 +503,28 @@ def do_sample(
 
     use_cfg = guidance_scale > 1.0 and neg_crossattn_emb is not None
 
-    for i in tqdm(range(steps), desc="Sampling"):
-        sigma = sigmas[i]
+    def _model_pred(latent, sigma_value):
         if timestep_callback is not None:
-            # fp32 sigma in [0, 1]; consumers normalize >1 inputs themselves, so
-            # this matches the [0, 1000] values injected during training.
-            timestep_callback(sigma)
-        # Schedule/Euler math stays fp32 (see sigmas above); the model gets the
-        # timestep in its own dtype, matching how it is called during training.
-        t = sigma.unsqueeze(0).to(dtype)  # (1,)
-
+            timestep_callback(sigma_value)
+        t = sigma_value.unsqueeze(0).to(dtype)
         if use_cfg:
-            # CFG: two separate passes to reduce memory usage
-            pos_out = dit(x, t, crossattn_emb, padding_mask=padding_mask)
-            pos_out = pos_out.float()
-            neg_out = dit(x, t, neg_crossattn_emb, padding_mask=padding_mask)
-            neg_out = neg_out.float()
+            pos_out = dit(latent, t, crossattn_emb, padding_mask=padding_mask).float()
+            neg_out = dit(latent, t, neg_crossattn_emb, padding_mask=padding_mask).float()
+            return neg_out + guidance_scale * (pos_out - neg_out)
+        return dit(latent, t, crossattn_emb, padding_mask=padding_mask).float()
 
-            model_output = neg_out + guidance_scale * (pos_out - neg_out)
+    for i in tqdm(range(steps), desc=f"Sampling ({sampler})"):
+        sigma = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        dt = sigma_next - sigma
+        d1 = _model_pred(x, sigma)
+        if sampler == "heun" and float(sigma_next) > 0:
+            x_euler = (x.float() + d1 * dt).to(dtype)
+            d2 = _model_pred(x_euler, sigma_next)
+            x = x.float() + 0.5 * (d1 + d2) * dt
         else:
-            model_output = dit(x, t, crossattn_emb, padding_mask=padding_mask)
-            model_output = model_output.float()
-
-        # Euler step: x_{t-1} = x_t - (sigma_t - sigma_{t-1}) * model_output
-        dt = sigmas[i + 1] - sigma
-        x = x + model_output * dt
+            # Euler (also final Heun step when sigma_next == 0)
+            x = x.float() + d1 * dt
         x = x.to(dtype)
 
     return x
@@ -582,11 +663,12 @@ def _sample_image_inference(
     height = prompt_dict.get("height", 512)
     scale = prompt_dict.get("scale", 7.5)
     seed = prompt_dict.get("seed")
-    flow_shift = prompt_dict.get("flow_shift", 3.0)
+    flow_shift = float(prompt_dict.get("flow_shift", 3.0) or 3.0)
     scheduler = str(prompt_dict.get("scheduler", "simple")).strip().lower() or "simple"
-    if scheduler not in ("simple", "beta"):
+    if scheduler not in ("simple", "beta", "normal"):
         logger.warning(f"unknown scheduler '{scheduler}' in sample prompt, falling back to 'simple'")
         scheduler = "simple"
+    sampler = _normalize_sample_sampler(prompt_dict.get("sample_sampler", "euler"))
 
     if prompt_replacement is not None:
         prompt = prompt.replace(prompt_replacement[0], prompt_replacement[1])
@@ -602,7 +684,7 @@ def _sample_image_inference(
 
     logger.info(
         f"  prompt: {prompt}, size: {width}x{height}, steps: {sample_steps}, scale: {scale}, "
-        f"flow_shift: {flow_shift}, scheduler: {scheduler}, seed: {seed}"
+        f"flow_shift: {flow_shift}, scheduler: {scheduler}, sampler: {sampler}, seed: {seed}"
     )
 
     # Encode prompt
@@ -682,6 +764,7 @@ def _sample_image_inference(
     latents = do_sample(
         height, width, seed, dit, crossattn_emb, sample_steps, dit.dtype, accelerator.device, scale, flow_shift, neg_crossattn_emb,
         scheduler=scheduler,
+        sampler=sampler,
         timestep_callback=set_ts if callable(set_ts) else None,
     )
 

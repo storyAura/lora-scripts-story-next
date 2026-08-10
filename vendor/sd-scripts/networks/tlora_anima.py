@@ -8,7 +8,7 @@
 import ast
 import os
 from functools import partial
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 
@@ -249,6 +249,66 @@ def create_network(
     return network
 
 
+def _tlora_hparams_from_weights(file, weights_sd: dict, kwargs: dict) -> Tuple[int, str, bool]:
+    """Resolve T-LoRA hyperparams: kwargs > safetensors metadata > legacy buffers > defaults."""
+    meta: dict = {}
+    if file and os.path.splitext(str(file))[1] == ".safetensors" and os.path.isfile(str(file)):
+        try:
+            from library import train_util
+
+            meta = train_util.load_metadata_from_safetensors(str(file)) or {}
+        except Exception:  # noqa: BLE001 - metadata is optional recovery
+            meta = {}
+
+    buffer_min_rank = next(
+        (
+            int(value.item())
+            for key, value in weights_sd.items()
+            if key.endswith(".tlora_min_rank_state")
+        ),
+        None,
+    )
+    buffer_schedule = next(
+        (
+            "linear" if int(value.item()) == 0 else "cosine"
+            for key, value in weights_sd.items()
+            if key.endswith(".tlora_rank_schedule_state")
+        ),
+        None,
+    )
+
+    if "tlora_min_rank" in kwargs and kwargs["tlora_min_rank"] is not None:
+        min_rank_raw = kwargs["tlora_min_rank"]
+    elif meta.get("ss_tlora_min_rank") not in (None, ""):
+        min_rank_raw = meta["ss_tlora_min_rank"]
+    elif buffer_min_rank is not None:
+        min_rank_raw = buffer_min_rank
+    else:
+        min_rank_raw = 1
+
+    if "tlora_rank_schedule" in kwargs and kwargs["tlora_rank_schedule"] is not None:
+        schedule_raw = kwargs["tlora_rank_schedule"]
+    elif meta.get("ss_tlora_rank_schedule") not in (None, ""):
+        schedule_raw = meta["ss_tlora_rank_schedule"]
+    elif buffer_schedule is not None:
+        schedule_raw = buffer_schedule
+    else:
+        schedule_raw = "cosine"
+
+    if "tlora_orthogonal_init" in kwargs and kwargs["tlora_orthogonal_init"] is not None:
+        orthogonal_raw = kwargs["tlora_orthogonal_init"]
+    elif meta.get("ss_tlora_orthogonal_init") not in (None, ""):
+        orthogonal_raw = meta["ss_tlora_orthogonal_init"]
+    else:
+        orthogonal_raw = False
+
+    return (
+        _parse_positive_int_arg(min_rank_raw, "tlora_min_rank"),
+        _normalize_schedule(schedule_raw),
+        _parse_bool_arg(orthogonal_raw, default=False),
+    )
+
+
 def create_network_from_weights(multiplier, file, ae, text_encoders, unet, weights_sd=None, for_inference=False, **kwargs):
     del ae
     if weights_sd is None:
@@ -281,30 +341,9 @@ def create_network_from_weights(multiplier, file, ae, text_encoders, unet, weigh
         if key not in modules_alpha:
             modules_alpha[key] = modules_dim[key]
 
-    stored_min_rank = next(
-        (
-            int(value.item())
-            for key, value in weights_sd.items()
-            if key.endswith(".tlora_min_rank_state")
-        ),
-        1,
+    tlora_min_rank, tlora_rank_schedule, tlora_orthogonal_init = _tlora_hparams_from_weights(
+        file, weights_sd, kwargs
     )
-    stored_schedule = next(
-        (
-            "linear" if int(value.item()) == 0 else "cosine"
-            for key, value in weights_sd.items()
-            if key.endswith(".tlora_rank_schedule_state")
-        ),
-        "cosine",
-    )
-    tlora_min_rank = _parse_positive_int_arg(
-        kwargs.get("tlora_min_rank", stored_min_rank),
-        "tlora_min_rank",
-    )
-    tlora_rank_schedule = _normalize_schedule(
-        kwargs.get("tlora_rank_schedule", stored_schedule)
-    )
-    tlora_orthogonal_init = _parse_bool_arg(kwargs.get("tlora_orthogonal_init", False), default=False)
 
     module_class = TLoRAInfModule if for_inference else None
 

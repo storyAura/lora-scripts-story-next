@@ -348,12 +348,12 @@ Exceptions and traps (2026-08-01):
   (LyCORIS forces scale=1) and `adapt_anima_config` auto-fills `scale_weight_norms=1.0` when
   the field is left empty (explicit values, including `0` = off, are respected). Do not
   re-introduce the old warn-only behavior — the schema copy promises this auto-guardrail.
-- Preview sampling: `sample_sampler` is decorative — the only implementation is the built-in
-  rectified-flow Euler in `anima_train_utils.do_sample()`. `sample_scheduler` is real
-  (simple/beta). Per-image sample params travel as prompt-line flags
-  (`--w --h --s --l --d --ss --sch --fs`) baked by `get_sample_prompts()`, never as TOML keys
-  (the adapter drops all `sample_*` UI fields). `--fs <flow_shift>` (default 3.0) is parsed by
-  the trainer but not exposed in the UI.
+- Preview sampling: `anima_train_utils.do_sample()` implements rectified-flow **euler** and
+  **heun**; `sample_scheduler` is `simple` / `beta` / `normal`. UI `sample_flow_shift` (default
+  3.0; raise to ~5.0 to align with common Comfy / local infer) is baked into prompt lines as
+  `--fs`. Per-image sample params travel as prompt-line flags
+  (`--w --h --s --l --d --ss --sch --fs`) via `get_sample_prompts()`, never as TOML keys
+  (the adapter drops all `sample_*` UI fields).
 - Timestep-aware adapters (T-LoRA rank masking) read
   `network.set_current_timestep()`. The train loop injects per-batch timesteps in [0, 1000]
   and must **not** clear them before backward (gradient checkpointing re-runs the forward);

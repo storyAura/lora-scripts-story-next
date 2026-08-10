@@ -129,6 +129,8 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 **v2.9.6:** **Pre-launch disk space check** — estimates checkpoints / disk caches / log margin and fails structured (`disk_space`) before write when free space is short (avoids `Errno 28`); bypass with `MIKAZUKI_SKIP_DISK_PREFLIGHT=1`.
 
+**v2.9.7:** sidebar **Quick Infer** (Anima) with auto base-model fill and GPU-busy guard; save option `no_metadata`; preview heun / normal / `sample_flow_shift`; T-LoRA export drops `*_state` buffers. Smoke: `venv\Scripts\python.exe -m pytest -q tests\test_infer_smoke.py`.
+
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="Train Monitor Dashboard" width="920" />
 </p>
@@ -182,6 +184,7 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 | Date | Version |
 |------|---------|
+| 2026-08-11 | **v2.9.7** — **Quick Infer** (Anima) + auto base fill + `no_metadata`; preview heun/normal/flow_shift; T-LoRA drops `*_state`; smoke `tests/test_infer_smoke.py` · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-10 | **v2.9.6** — **pre-launch disk space check**: structured reject when short (avoids `Errno 28`); bypass `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-08 | **v2.9.5** — **SDXL LoRA** crash fix + smoke; **brand** refresh (new logo/cover/banner), purge upstream Next Trainer images · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-06 | **v2.9.4** — **same-epoch multi-resolution** (`multires_per_image`); multi-line preview prompts · see [CHANGELOG.md](CHANGELOG.md), [`docs/proposal/multires_per_image_migration.md`](docs/proposal/multires_per_image_migration.md) |

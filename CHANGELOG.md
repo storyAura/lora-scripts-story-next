@@ -3,6 +3,26 @@
 本文件记录 **storyAura/lora-scripts-story-next** 的发行说明（v2.9.0 及更早条目沿袭上游 wochenlong/lora-scripts-next）；kohya-ss/sd-scripts 的变更请见其仓库。
 
 ---
+## v2.9.7 — 2026-08-11
+
+### WebUI 快速推理（Anima）
+
+- 侧栏「训练」组新增 **快速推理** 浮层（`sd-trainer-infer.js`，no-cache）：选近期 `output/**/*.safetensors`、自定义提示词与采样参数，调用 `anima_minimal_inference.py` 出图。
+- **训练占用 GPU 时禁用**（`/api/infer/run` 拒绝，`busy_training`）；输出写到 `output/infer/<timestamp>/`。
+- **自动匹配底模**：选择 LoRA 时读取元数据识别类型并填入 DiT / VAE / 文本编码器；非 Anima 权重会提示并禁用生成。
+- **保存设置**新增「导出时不写入训练元数据」`no_metadata`。
+- **验证**：`tests/test_infer_smoke.py` 覆盖 status → lora-info → run → images → terminate 冒烟（mock 子进程，不占 GPU）。
+
+### T-LoRA 导出
+
+- 新 checkpoint **不再写入** `*.tlora_min_rank_state` / `*.tlora_rank_schedule_state`（`persistent=False`）；超参走 `ss_tlora_*` metadata。旧含 buffer 的权重仍可加载；Comfy 对旧文件的 `*_state` 警告可忽略。
+
+### 训练预览采样
+
+- `do_sample` 支持 **euler / heun**；调度器增加 **normal**（Comfy 风格正态间距后再 `flow_shift`）；UI 暴露 `sample_flow_shift`（默认 3.0，可改 5.0 对齐常见本地推理）。
+- 快速推理与训练预览共用同一套 RF 采样器 / 调度器参数。
+
+---
 ## v2.9.6 — 2026-08-10
 
 ### 开训前磁盘预检

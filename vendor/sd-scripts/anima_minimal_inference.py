@@ -82,6 +82,20 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Shift factor for flow matching schedulers. Default is 5.0.",
     )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="simple",
+        choices=["simple", "beta", "normal"],
+        help="Sigma schedule for denoising (aligned with training preview).",
+    )
+    parser.add_argument(
+        "--sampler",
+        type=str,
+        default="euler",
+        choices=["euler", "heun", "k_euler"],
+        help="Rectified-flow integrator (aligned with training preview).",
+    )
 
     parser.add_argument("--fp8", action="store_true", help="use fp8 for DiT model")
     parser.add_argument("--fp8_scaled", action="store_true", help="use scaled fp8 for DiT, only for fp8")
@@ -525,55 +539,37 @@ def generate_body(
     if context_null is None:
         context_null = context  # dummy for unconditional
     negative_embed = context_null["embed"][0].to(device, dtype=torch.bfloat16)
+    del seed_g  # do_sample owns RNG via seed
 
-    # Prepare latent variables
-    num_channels_latents = anima_models.Anima.LATENT_CHANNELS
-    shape = (
-        1,
-        num_channels_latents,
-        1,  # Frame dimension
-        height // 8,  # qwen_image_autoencoder_kl.SCALE_FACTOR,
-        width // 8,  # qwen_image_autoencoder_kl.SCALE_FACTOR,
-    )
-    latents = randn_tensor(shape, generator=seed_g, device=device, dtype=torch.bfloat16)
-
-    # Create padding mask
-    bs = latents.shape[0]
-    h_latent = latents.shape[-2]
-    w_latent = latents.shape[-1]
-    padding_mask = torch.zeros(bs, 1, h_latent, w_latent, dtype=torch.bfloat16, device=device)
-
-    logger.info(f"Embed: {embed.shape}, negative_embed: {negative_embed.shape}, latents: {latents.shape}")
+    logger.info(f"Embed: {embed.shape}, negative_embed: {negative_embed.shape}")
     embed = embed.to(torch.bfloat16)
     negative_embed = negative_embed.to(torch.bfloat16)
 
-    # Prepare timesteps
-    timesteps, sigmas = hunyuan_image_utils.get_timesteps_sigmas(args.infer_steps, args.flow_shift, device)
-    timesteps /= 1000  # scale to [0,1] range
-    timesteps = timesteps.to(device, dtype=torch.bfloat16)
+    # Prefer the training-preview RF path (euler/heun + simple/beta/normal) so
+    # WebUI quick-infer and train samples share the same integrator.
+    from library.anima_train_utils import do_sample
 
-    # Denoising loop
+    scheduler = str(getattr(args, "scheduler", "simple") or "simple")
+    sampler = str(getattr(args, "sampler", "euler") or "euler")
     do_cfg = args.guidance_scale != 1.0
-    autocast_enabled = args.fp8
-
-    with tqdm(total=len(timesteps), desc="Denoising steps") as pbar:
-        for i, t in enumerate(timesteps):
-            t_expand = t.expand(latents.shape[0])
-
-            with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled):
-                noise_pred = anima(latents, t_expand, embed, padding_mask=padding_mask)
-
-            if do_cfg:
-                with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled):
-                    uncond_noise_pred = anima(latents, t_expand, negative_embed, padding_mask=padding_mask)
-                noise_pred = uncond_noise_pred + args.guidance_scale * (noise_pred - uncond_noise_pred)
-
-            # ensure latents dtype is consistent
-            latents = hunyuan_image_utils.step(latents, noise_pred, sigmas, i).to(latents.dtype)
-
-            pbar.update()
-
-    return latents
+    autocast_enabled = bool(getattr(args, "fp8", False))
+    with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled):
+        latents = do_sample(
+            height,
+            width,
+            seed,
+            anima,
+            embed,
+            int(args.infer_steps),
+            torch.bfloat16,
+            device,
+            guidance_scale=float(args.guidance_scale),
+            flow_shift=float(args.flow_shift),
+            neg_crossattn_emb=negative_embed if do_cfg else None,
+            scheduler=scheduler,
+            sampler=sampler,
+        )
+    return latents.to(torch.bfloat16)
 
 
 def get_time_flag():
