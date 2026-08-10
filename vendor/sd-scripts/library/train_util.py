@@ -4503,16 +4503,19 @@ def add_dit_training_arguments(parser: argparse.ArgumentParser):
     )
 
     # offloading
-    parser.add_argument(
-        "--blocks_to_swap",
-        type=int,
-        default=None,
-        help="[EXPERIMENTAL] "
-        "Sets the number of blocks to swap during the forward and backward passes."
-        "Increasing this number lowers the overall VRAM used during training at the expense of training speed (s/it)."
-        " / 順伝播および逆伝播中にスワップするブロックの数を設定します。"
-        "この数を増やすと、トレーニング中のVRAM使用量が減りますが、トレーニング速度（s/it）も低下します。",
-    )
+    # DiT trainers call train_network.setup_parser() first, which already registers
+    # --blocks_to_swap for shared FSDP2 preflight (SD/SDXL). Skip the duplicate.
+    if not any(opt in parser._option_string_actions for opt in ("--blocks_to_swap",)):
+        parser.add_argument(
+            "--blocks_to_swap",
+            type=int,
+            default=None,
+            help="[EXPERIMENTAL] "
+            "Sets the number of blocks to swap during the forward and backward passes."
+            "Increasing this number lowers the overall VRAM used during training at the expense of training speed (s/it)."
+            " / 順伝播および逆伝播中にスワップするブロックの数を設定します。"
+            "この数を増やすと、トレーニング中のVRAM使用量が減りますが、トレーニング速度（s/it）も低下します。",
+        )
 
 
 def get_sanitized_config_or_none(args: argparse.Namespace):

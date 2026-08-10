@@ -10,6 +10,10 @@
 - **`/api/run` 与训练队列**：在写 autosave TOML / 起进程之前，按配置粗估输出权重、磁盘缓存与日志余量，对照 `output_dir` / 缓存盘 / autosave 盘剩余空间；不足则结构化拒绝（`field: disk_space`），避免再出现 `Errno 28`。
 - **紧急绕过**：环境变量 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1`。
 
+### Anima / DiT 开训
+
+- **修复** `argument --blocks_to_swap: conflicting option string`：v2.9.5 在共享 `train_network` 注册了该参数后，Anima/Flux/SD3 等再走 `add_dit_training_arguments` 会重复注册；现改为已存在则跳过。
+
 ---
 ## v2.9.5 — 2026-08-08
 

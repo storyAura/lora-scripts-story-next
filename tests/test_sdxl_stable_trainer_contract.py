@@ -46,3 +46,20 @@ def test_vendor_sdxl_parser_registers_blocks_to_swap():
 
     assert hasattr(args, "blocks_to_swap")
     assert args.blocks_to_swap is None
+
+
+def test_anima_parser_accepts_shared_blocks_to_swap_without_conflict():
+    """train_network + add_dit_training_arguments must not double-register the flag."""
+    vendor = ROOT / "vendor" / "sd-scripts"
+    sys.path.insert(0, str(vendor))
+    try:
+        import anima_train_network as anima_mod
+
+        parser = anima_mod.setup_parser()
+        args = parser.parse_args([])
+    finally:
+        if sys.path and sys.path[0] == str(vendor):
+            sys.path.pop(0)
+
+    assert hasattr(args, "blocks_to_swap")
+    assert args.blocks_to_swap is None
