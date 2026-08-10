@@ -3,6 +3,14 @@
 本文件记录 **storyAura/lora-scripts-story-next** 的发行说明（v2.9.0 及更早条目沿袭上游 wochenlong/lora-scripts-next）；kohya-ss/sd-scripts 的变更请见其仓库。
 
 ---
+## v2.9.6 — 2026-08-10
+
+### 开训前磁盘预检
+
+- **`/api/run` 与训练队列**：在写 autosave TOML / 起进程之前，按配置粗估输出权重、磁盘缓存与日志余量，对照 `output_dir` / 缓存盘 / autosave 盘剩余空间；不足则结构化拒绝（`field: disk_space`），避免再出现 `Errno 28`。
+- **紧急绕过**：环境变量 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1`。
+
+---
 ## v2.9.5 — 2026-08-08
 
 ### SDXL LoRA

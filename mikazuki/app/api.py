@@ -78,6 +78,7 @@ from mikazuki.training_validation import (
     TrainingConfigurationError,
     validate_training_configuration,
 )
+from mikazuki.disk_preflight import DiskSpaceError, check_training_disk_space
 from mikazuki.optimizer_configuration import (
     OptimizerConfigurationError,
     normalize_optimizer_configuration,
@@ -147,6 +148,31 @@ def _missing_standard_train_field(field: str, label: str) -> APIResponseFail:
         message=f"缺少 {label} ({field})，无法启动训练。请检查训练参数后重试。",
         data={"field": field},
     )
+
+
+def _count_train_images(train_data_dir: str) -> int:
+    if not train_data_dir or not os.path.isdir(train_data_dir):
+        return 0
+    try:
+        return len(train_utils.get_total_images(train_data_dir))
+    except OSError:
+        return 0
+
+
+def _disk_preflight_or_fail(config: dict, model_train_type: str, autosave_dir: str):
+    """Return APIResponseFail when estimated writes exceed free space; else None."""
+    train_data_dir = str(config.get("train_data_dir") or "").strip()
+    try:
+        check_training_disk_space(
+            config,
+            model_train_type,
+            image_count=_count_train_images(train_data_dir),
+            autosave_dir=autosave_dir,
+        )
+    except DiskSpaceError as exc:
+        log.error(str(exc))
+        return APIResponseFail(message=str(exc), data=exc.as_dict())
+    return None
 
 
 def _is_invalid_value(value) -> bool:
@@ -694,6 +720,9 @@ async def submit_training_config(config: dict):
             preflight = run_preflight(adapted.values, runtime)
             if not preflight.ok:
                 return _anima_fast_fail_from_preflight(preflight)
+            disk_failure = _disk_preflight_or_fail(adapted.values, model_train_type, autosave_dir)
+            if disk_failure is not None:
+                return disk_failure
             toml_file, adapted_values, warnings = _write_adapted_anima_fast_toml(
                 adapted.values, [*adapted.warnings, *preview_warnings, *preflight.warnings], run_id, autosave_dir
             )
@@ -742,6 +771,10 @@ async def submit_training_config(config: dict):
     validated, message = train_utils.validate_model(pretrained_model, model_train_type)
     if not validated:
         return APIResponseFail(message=message)
+
+    disk_failure = _disk_preflight_or_fail(config, model_train_type, autosave_dir)
+    if disk_failure is not None:
+        return disk_failure
 
     if "prompt_file" in config and config["prompt_file"].strip() != "":
         prompt_file = config["prompt_file"].strip()
