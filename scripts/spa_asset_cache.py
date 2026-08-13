@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 # Bump this whenever frontend/dist assets are patched in place (same filename hash).
-SPA_ASSET_CACHE_KEY = "20260811-v2.9.7-quick-infer"
+SPA_ASSET_CACHE_KEY = "20260813-v2.9.7-lokr-factor"
 
 # Previous keys replaced by scripts/bump_spa_asset_cache_key.py when bumping.
 LEGACY_SPA_ASSET_CACHE_KEYS = (
+    "20260811-v2.9.7-quick-infer",
     "20260810-v2.9.6-disk-preflight",
     "20260808-v2.9.5-brand",
     "20260808-v2.9.5-sdxl-smoke",

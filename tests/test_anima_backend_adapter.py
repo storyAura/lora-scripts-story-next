@@ -334,6 +334,45 @@ class AnimaBackendAdapterTests(unittest.TestCase):
         self.assertIn("factor=16", na)
         self.assertIn("full_matrix=True", na)
 
+    def test_ui_lokr_factor_overrides_stale_network_args_factor(self):
+        """parseParams / imported network_args may still carry factor=-1.
+
+        The visible lokr_factor field is authoritative; after inject+dedupe
+        only the UI value should remain (sd-scripts last-wins is not enough
+        if metadata is built from a dict that kept the first key).
+        """
+        config = {
+            "lora_type": "lokr",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "lokr",
+            "lokr_factor": 8,
+            "full_matrix": True,
+            "network_args": ["algo=lokr", "factor=-1"],
+        }
+        adapted, warnings = adapt_anima_config(config)
+
+        factors = [item for item in adapted["network_args"] if item.startswith("factor=")]
+        self.assertEqual(factors, ["factor=8"])
+        self.assertIn("full_matrix=True", adapted["network_args"])
+        self.assertNotIn("lokr_factor", adapted)
+
+    def test_frontend_folded_factor_kept_when_lokr_factor_also_present(self):
+        config = {
+            "lora_type": "lokr",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "lokr",
+            "lokr_factor": 8,
+            "full_matrix": True,
+            "network_args": [
+                "conv_dim=4",
+                "algo=lokr",
+                "factor=8",
+            ],
+        }
+        adapted, _warnings = adapt_anima_config(config)
+        factors = [item for item in adapted["network_args"] if item.startswith("factor=")]
+        self.assertEqual(factors, ["factor=8"])
+
     def test_non_lycoris_module_ignores_lycoris_fields(self):
         config = {
             "network_module": "networks.lora_anima",

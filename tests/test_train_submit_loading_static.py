@@ -37,7 +37,8 @@ class TrainSubmitLoadingStaticTests(unittest.TestCase):
         self.assertIn('ElMessage.success(g.data&&g.data.queue_message||"训练已开始")', layout)
         self.assertNotIn('message:"正在提交训练任务...",duration:2e3', layout)
         self.assertIn("setSubmitButtonLoading(!1)", layout)
-        self.assertIn('try{const _=parseParams(n.value(a.value),t);', layout)
+        self.assertIn('try{const _=parseParams(T(),t);', layout)
+        self.assertNotIn('try{const _=parseParams(n.value(a.value),t);', layout)
         self.assertIn("finally{submitNotice.close(),submitLoading.value=!1", layout)
         self.assertIn("loading:submitLoading.value", layout)
         self.assertIn("disabled:submitLoading.value", layout)
@@ -118,6 +119,38 @@ class TrainSubmitLoadingStaticTests(unittest.TestCase):
         )
         repatched = layout
         for label, old, new in patch_config_import_layout.PREVIEW_PATCHES:
+            repatched = patch_config_import_layout._replace_once(
+                repatched, label, old, new
+            )
+        self.assertEqual(layout, repatched)
+
+    def test_lokr_factor_submit_uses_same_path_as_preview(self):
+        layout = Path("frontend/dist/assets/layout.96d49288.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("parseParams(T(),t)", layout)
+        self.assertNotIn("parseParams(n.value(a.value),t)", layout)
+        self.assertIn(
+            'e.lokr_factor!=null&&e.lokr_factor!==""&&e.network_args.push(`factor=${e.lokr_factor}`)',
+            layout,
+        )
+        self.assertNotIn(
+            "e.lokr_factor&&e.network_args.push(`factor=${e.lokr_factor}`)",
+            layout,
+        )
+        self.assertNotIn('"dylora_unit","lokr_factor","train_norm"', layout)
+        self.assertIn(
+            '["lokr_factor","full_matrix","use_cp","decompose_both","use_scalar","dora_wd","bypass_mode"]'
+            ".forEach(r=>r in _&&_[r]!==undefined&&_[r]!==null&&(m[r]=_[r]))",
+            layout,
+        )
+
+    def test_patch_script_lokr_factor_replacements_are_idempotent(self):
+        layout = Path("frontend/dist/assets/layout.96d49288.js").read_text(
+            encoding="utf-8"
+        )
+        repatched = layout
+        for label, old, new in patch_config_import_layout.LOKR_FACTOR_PATCHES:
             repatched = patch_config_import_layout._replace_once(
                 repatched, label, old, new
             )

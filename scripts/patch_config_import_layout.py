@@ -278,11 +278,41 @@ PREVIEW_PATCHES: list[tuple[str, str, str]] = [
             "let m=n.value(_);w.forEach(g=>{Array.isArray(m[g])&&m[g].length==0&&delete m[g]});"
             f"if(_){{const b={PREVIEW_SIGNAL_KEYS},h={PREVIEW_SIGNAL_GUARD_RAW};"
             "(_.enable_preview===!0||_.enable_preview===\"true\"||_.enable_preview===1||h)&&"
-            "(m.enable_preview=!0);if(m.enable_preview)for(const r of b)r in _&&m[r]===undefined&&(m[r]=_[r])}"
+            "(m.enable_preview=!0);if(m.enable_preview)for(const r of b)r in _&&m[r]===undefined&&(m[r]=_[r]);"
+            '["lokr_factor","full_matrix","use_cp","decompose_both","use_scalar","dora_wd","bypass_mode"]'
+            ".forEach(r=>r in _&&_[r]!==undefined&&_[r]!==null&&(m[r]=_[r]))}"
             "return m}"
         ),
     ),
 ]
+
+LOKR_FACTOR_PATCHES: list[tuple[str, str, str]] = [
+    (
+        "submit uses T() like preview so lokr_factor survives schema()",
+        "try{const _=parseParams(n.value(a.value),t);",
+        "try{const _=parseParams(T(),t);",
+    ),
+    (
+        "parseParams folds lokr_factor including -1",
+        "e.lokr_factor&&e.network_args.push(`factor=${e.lokr_factor}`)",
+        'e.lokr_factor!=null&&e.lokr_factor!==""&&e.network_args.push(`factor=${e.lokr_factor}`)',
+    ),
+    (
+        "keep lokr_factor for backend adapter after parseParams",
+        '"dylora_unit","lokr_factor","train_norm"',
+        '"dylora_unit","train_norm"',
+    ),
+    (
+        "T() overlays raw lokr_factor over schema defaults",
+        "if(m.enable_preview)for(const r of b)r in _&&m[r]===undefined&&(m[r]=_[r])}return m}",
+        (
+            "if(m.enable_preview)for(const r of b)r in _&&m[r]===undefined&&(m[r]=_[r]);"
+            '["lokr_factor","full_matrix","use_cp","decompose_both","use_scalar","dora_wd","bypass_mode"]'
+            ".forEach(r=>r in _&&_[r]!==undefined&&_[r]!==null&&(m[r]=_[r]))}return m}"
+        ),
+    ),
+]
+
 
 SUBMIT_FEEDBACK_PATCHES: list[tuple[str, str, str]] = [
     (
@@ -339,6 +369,9 @@ def main() -> None:
             text = _replace_once(text, label, old, new)
 
     for label, old, new in PREVIEW_PATCHES:
+        text = _replace_once(text, label, old, new)
+
+    for label, old, new in LOKR_FACTOR_PATCHES:
         text = _replace_once(text, label, old, new)
 
     for label, old, new in SUBMIT_FEEDBACK_PATCHES:

@@ -634,8 +634,12 @@ def adapt_anima_config(
                 )
             ):
                 warnings.append(LOKR_BF16_DORA_WARNING)
+        # UI fields are appended after any leftover network_args (parseParams /
+        # custom args / imported factor=-1). Dedupe so the last value wins —
+        # otherwise sd-scripts metadata can record a stale factor while the
+        # form showed a different lokr_factor.
         if network_args:
-            source["network_args"] = network_args
+            source["network_args"] = _normalize_network_args(network_args)
 
     # T-LoRA: convert top-level UI fields into network_args so sd-scripts
     # can forward them to create_network() as **kwargs.
