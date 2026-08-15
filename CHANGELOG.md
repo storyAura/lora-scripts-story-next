@@ -3,6 +3,16 @@
 本文件记录 **storyAura/lora-scripts-story-next** 的发行说明（v2.9.0 及更早条目沿袭上游 wochenlong/lora-scripts-next）；kohya-ss/sd-scripts 的变更请见其仓库。
 
 ---
+## v2.9.8 — 2026-08-15
+
+### Anima 2.9B
+
+- 侧栏拆成两个入口：**Anima2.9B**（LoRA，挂在 Anima LoRA 下，`anima-2.9b`）与 **Anima2.9B Finetune**（全量微调，`anima-2.9b-finetune`）。不再用同一页的 `lora` / `finetune` 下拉。
+- LoRA 走 `anima_train_network.py`；全量微调走 `anima_train.py`。加载 40 层 preview 检查点（如 `Anima-2.9B-preview-v1.safetensors`）。
+- **只训插入层**：冻结 28 个继承层，只训练交错插入的 12 块（`2,5,8,11,14,17,21,24,27,30,33,36`）。LoRA 写成 `train_block_indices`；微调写成 `freeze_inserted_only_training`。与 LyCORIS / LoHa 互斥。
+- **验证**：单元 / wrapper smoke；本机经 `submit_training_config` / `/api/run` 完成 2-step LoRA GPU smoke（NF4 冻基底、512、RTX 5070 8GB），写出 `anima_29b_smoke.safetensors`。
+
+---
 ## v2.9.7 — 2026-08-11
 
 ### WebUI 快速推理（Anima）

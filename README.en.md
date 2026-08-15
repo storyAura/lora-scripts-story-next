@@ -30,7 +30,7 @@
 |------|-----------|------------------------|
 | **Training queue** | Sidebar queue: enqueue many jobs, auto conveyor, history retry / edit | Mostly one-shot submit |
 | **Long-run stability** | SSE logs past 15k lines, bounded task/log history, kill full process tree before next run | Basic task lifecycle |
-| **Anima surface** | LoRA / LoKr / T-LoRA, T-GLoKR, Fast plugin path, full finetune entry; **same-epoch multi-resolution training** (free-fit tiers) | Varies by upstream release |
+| **Anima surface** | LoRA / LoKr / T-LoRA, T-GLoKR, Fast plugin path, full finetune; **Anima 2.9B** LoRA / Finetune as separate pages; **same-epoch multi-resolution training** (free-fit tiers) | Varies by upstream release |
 | **UI & identity** | Next Story Trainer branding, EN/ZH UI dictionaries, this repo’s Releases & contact | Upstream branding & release channel |
 | **Not shipped here** | No **Anima Edit** experimental branch entry | May host separate experiment branches |
 
@@ -131,6 +131,8 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 **v2.9.7:** sidebar **Quick Infer** (Anima) with auto base-model fill and GPU-busy guard; save option `no_metadata`; preview heun / normal / `sample_flow_shift`; T-LoRA export drops `*_state` buffers. Smoke: `venv\Scripts\python.exe -m pytest -q tests\test_infer_smoke.py`.
 
+**v2.9.8:** **Anima 2.9B** split into two pages — **Anima2.9B** under Anima LoRA, and **Anima2.9B Finetune** under full finetune; optional train-inserted-layers-only. Local 2-step LoRA GPU smoke passed.
+
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="Train Monitor Dashboard" width="920" />
 </p>
@@ -184,6 +186,7 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 | Date | Version |
 |------|---------|
+| 2026-08-15 | **v2.9.8** — **Anima 2.9B**: separate LoRA / Finetune pages; optional inserted-layer-only training; 2-step LoRA GPU smoke · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-11 | **v2.9.7** — **Quick Infer** (Anima) + auto base fill + `no_metadata`; preview heun/normal/flow_shift; T-LoRA drops `*_state`; smoke `tests/test_infer_smoke.py` · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-10 | **v2.9.6** — **pre-launch disk space check**: structured reject when short (avoids `Errno 28`); bypass `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-08 | **v2.9.5** — **SDXL LoRA** crash fix + smoke; **brand** refresh (new logo/cover/banner), purge upstream Next Trainer images · see [CHANGELOG.md](CHANGELOG.md) |

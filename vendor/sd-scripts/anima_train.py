@@ -22,6 +22,7 @@ init_ipex()
 
 from accelerate.utils import set_seed
 from library import (
+    anima_block_freeze,
     anima_models,
     anima_regional_compile,
     anima_train_utils,
@@ -296,6 +297,15 @@ def train(args):
 
     train_dit = args.learning_rate != 0
     dit.requires_grad_(train_dit)
+    if train_dit and getattr(args, "freeze_inserted_only_training", False):
+        freeze_summary = anima_block_freeze.apply_inserted_only_training_freeze(dit)
+        if getattr(args, "llm_adapter_lr", None) != 0 and hasattr(dit, "llm_adapter"):
+            dit.llm_adapter.requires_grad_(True)
+        accelerator.print(
+            f"freeze_inserted_only_training: enabled for {freeze_summary['block_count']}-block Anima DiT"
+        )
+        accelerator.print(f"  inserted trainable blocks: {freeze_summary['inserted_block_indices']}")
+        accelerator.print(f"  frozen inherited blocks: {freeze_summary['inherited_block_indices']}")
     if not train_dit:
         dit.to(accelerator.device, dtype=weight_dtype)
 

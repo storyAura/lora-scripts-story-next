@@ -38,6 +38,8 @@
     "LoRA 训练": "LoRA Training",
     全量微调: "Full Finetune",
     "Anima Fast": "Anima Fast",
+    Anima2.9B: "Anima2.9B",
+    "Anima2.9B Finetune": "Anima2.9B Finetune",
     工具与调试: "Tools",
     数据集打标: "Dataset Tagging",
     标签编辑: "Tag Editor",

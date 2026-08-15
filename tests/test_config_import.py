@@ -453,5 +453,94 @@ class QueueEditHandoverRoundTripTests(unittest.TestCase):
         self.assertEqual(config["model_train_type"], "anima-lora")
 
 
+class Anima29bConfigImportTests(unittest.TestCase):
+    def test_29b_config_is_accepted_on_29b_page(self):
+        result = validate_config_import(
+            "anima-2.9b",
+            {
+                "model_train_type": "anima-2.9b",
+                "anima_29b_train_mode": "lora",
+                "lora_type": "lora",
+                "freeze_inserted_only_training": True,
+                "qwen3": "qwen_3_06b_base.safetensors",
+            },
+        )
+        self.assertEqual(result["result"], "ok")
+        self.assertEqual(result["config"]["model_train_type"], "anima-2.9b")
+        self.assertEqual(result["config"]["network_module"], "networks.lora_anima")
+        self.assertIs(result["config"]["freeze_inserted_only_training"], True)
+
+    def test_29b_config_on_standard_anima_page_redirects(self):
+        result = validate_config_import(
+            "sd3-lora",
+            {
+                "model_train_type": "anima-2.9b",
+                "anima_29b_train_mode": "lora",
+                "qwen3": "qwen_3_06b_base.safetensors",
+            },
+        )
+        self.assertEqual(result["result"], "redirect")
+        self.assertEqual(result["target_path"], "/lora/anima-2.9b.html")
+
+    def test_standard_anima_config_on_29b_page_redirects(self):
+        result = validate_config_import(
+            "anima-2.9b",
+            {
+                "model_train_type": "anima-lora",
+                "qwen3": "qwen_3_06b_base.safetensors",
+                "vae": "qwen_image_vae.safetensors",
+            },
+        )
+        self.assertEqual(result["result"], "redirect")
+        self.assertEqual(result["target_path"], "/lora/sd3.html")
+
+    def test_train_block_indices_hydrate_the_freeze_switch(self):
+        result = validate_config_import(
+            "anima-2.9b",
+            {
+                "model_train_type": "anima-2.9b",
+                "anima_29b_train_mode": "lora",
+                "lora_type": "lora",
+                "network_module": "networks.lora_anima",
+                "network_args": [
+                    "train_block_indices=2,5,8,11,14,17,21,24,27,30,33,36",
+                ],
+            },
+        )
+        self.assertEqual(result["result"], "ok")
+        self.assertIs(result["config"]["freeze_inserted_only_training"], True)
+        self.assertEqual(
+            result["config"]["train_block_indices"],
+            "2,5,8,11,14,17,21,24,27,30,33,36",
+        )
+
+    def test_finetune_mode_on_lora_page_redirects_to_finetune_page(self):
+        result = validate_config_import(
+            "anima-2.9b",
+            {
+                "model_train_type": "anima-2.9b",
+                "anima_29b_train_mode": "finetune",
+                "learning_rate": "1e-5",
+            },
+        )
+        self.assertEqual(result["result"], "redirect")
+        self.assertEqual(result["target_path"], "/lora/anima-2.9b-finetune.html")
+
+    def test_29b_finetune_config_is_accepted_on_finetune_page(self):
+        result = validate_config_import(
+            "anima-2.9b-finetune",
+            {
+                "model_train_type": "anima-2.9b-finetune",
+                "freeze_inserted_only_training": True,
+                "learning_rate": "1e-5",
+                "qwen3": "qwen_3_06b_base.safetensors",
+            },
+        )
+        self.assertEqual(result["result"], "ok")
+        self.assertEqual(result["config"]["model_train_type"], "anima-2.9b-finetune")
+        self.assertNotIn("network_module", result["config"])
+
+
 if __name__ == "__main__":
     unittest.main()
+

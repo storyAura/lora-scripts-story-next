@@ -37,6 +37,43 @@ def normalize_anima_checkpoint_key(key: str) -> str:
     return key
 
 
+def count_anima_blocks(state_dict_keys) -> int:
+    """Count consecutive `blocks.{i}.*` keys after stripping checkpoint prefixes."""
+    normalized = [normalize_anima_checkpoint_key(str(key)) for key in state_dict_keys]
+    count = 0
+    while any(key.startswith(f"blocks.{count}.") for key in normalized):
+        count += 1
+    return count
+
+
+def _list_checkpoint_keys(dit_path: str) -> Optional[List[str]]:
+    if not dit_path or not os.path.isfile(dit_path):
+        return None
+    if dit_path.endswith(".safetensors"):
+        from safetensors import safe_open
+
+        with safe_open(dit_path, framework="pt") as handle:
+            return list(handle.keys())
+    return None
+
+
+def infer_anima_num_blocks(dit_path: str, default: int = 28) -> int:
+    """Infer DiT depth from checkpoint keys so 28-layer and 40-layer 2.9B both load."""
+    keys = _list_checkpoint_keys(dit_path)
+    if keys is None:
+        logger.warning(
+            f"Could not list checkpoint keys from {dit_path}; falling back to num_blocks={default}"
+        )
+        return default
+    counted = count_anima_blocks(keys)
+    if counted == 0:
+        logger.warning(
+            f"No blocks.{{i}} keys found in {dit_path}; falling back to num_blocks={default}"
+        )
+        return default
+    return counted
+
+
 def load_anima_model(
     device: Union[str, torch.device],
     dit_path: str,
@@ -71,7 +108,11 @@ def load_anima_model(
     device = torch.device(device)
     loading_device = torch.device(loading_device)
 
-    # We currently support fixed DiT config for Anima models
+    num_blocks = infer_anima_num_blocks(dit_path)
+    logger.info(f"DiT config: num_blocks={num_blocks} (inferred from {dit_path})")
+
+    # Width/head layout stays the official 2048-channel Anima recipe; only depth
+    # is inferred so the 40-layer 2.9B checkpoint is not silently truncated.
     dit_config = {
         "max_img_h": 512,
         "max_img_w": 512,
@@ -90,7 +131,7 @@ def load_anima_model(
         "max_fps": 30,
         "use_adaln_lora": True,
         "adaln_lora_dim": 256,
-        "num_blocks": 28,
+        "num_blocks": num_blocks,
         "num_heads": 16,
         "extra_per_block_abs_pos_emb": False,
         "rope_h_extrapolation_ratio": 4.0,

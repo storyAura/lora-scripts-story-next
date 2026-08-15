@@ -154,6 +154,14 @@ def add_anima_training_arguments(parser: argparse.ArgumentParser):
         help="Disable internal VAE caching mechanism to reduce memory usage. Encoding / decoding will also be faster, but this differs from official behavior."
         + " / VAEのメモリ使用量を減らすために内部のキャッシュ機構を無効にします。エンコード/デコードも速くなりますが、公式の動作とは異なります。",
     )
+    parser.add_argument(
+        "--freeze_inserted_only_training",
+        action="store_true",
+        help=(
+            "For the 40-layer expanded Anima checkpoint, freeze inherited weights and train only the "
+            "12 inserted interleaved blocks. Requires the 40-layer checkpoint."
+        ),
+    )
 
 
 # Loss weighting
@@ -257,7 +265,9 @@ def get_anima_param_groups(
                 p.requires_grad_(False)
             logger.info(f"  Frozen {name} params ({len(params)} parameters)")
         elif len(params) > 0:
-            param_groups.append({"params": params, "lr": lr})
+            trainable = [p for p in params if p.requires_grad]
+            if trainable:
+                param_groups.append({"params": trainable, "lr": lr})
 
     total_trainable = sum(p.numel() for group in param_groups for p in group["params"] if p.requires_grad)
     logger.info(f"Total trainable parameters: {total_trainable:,}")

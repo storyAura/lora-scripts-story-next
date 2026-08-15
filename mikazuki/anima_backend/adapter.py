@@ -39,6 +39,7 @@ SUPPORTED_FIELDS = {
     "anima_gradient_checkpointing_mode",
     "anima_compile_blocks",
     "anima_compile_backend",
+    "freeze_inserted_only_training",
     "train_data_dir",
     "reg_data_dir",
     "resolution",
@@ -229,6 +230,7 @@ UI_ONLY_FIELDS = {
     "json_caption_hint",
     "lycoris_ext_hint",
     "lora_type",
+    "anima_29b_train_mode",
 }
 
 # Top-level UI fields that should be injected into network_args for T-LoRA.
@@ -242,7 +244,11 @@ STANDARD_LORA_NETWORK_ARG_FIELDS = {
     "loraplus_lr_ratio",
     "loraplus_unet_lr_ratio",
     "loraplus_text_encoder_lr_ratio",
+    "train_block_indices",
 }
+
+INSERTED_40_BLOCK_INDICES = (2, 5, 8, 11, 14, 17, 21, 24, 27, 30, 33, 36)
+INSERTED_40_BLOCK_INDICES_CSV = ",".join(str(index) for index in INSERTED_40_BLOCK_INDICES)
 
 PISSA_NETWORK_ARG_FIELDS = {
     "pissa_init",
@@ -368,6 +374,14 @@ LOKR_FULL_MATRIX_GUARD_WARNING = (
     "promised stability guardrail was auto-enabled (scale_weight_norms=1.0). "
     "Set scale_weight_norms=0 explicitly to opt out."
 )
+
+
+def _is_truthy_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _is_empty_value(value: Any) -> bool:
@@ -564,12 +578,24 @@ def adapt_anima_config(
     source.pop("use_g_out", None)
     source.pop("g_norm_mode", None)
 
+    freeze_inserted_only = _is_truthy_flag(source.get("freeze_inserted_only_training"))
     if finetune:
         for key in list(source):
             if key in NETWORK_ONLY_FIELDS:
                 source.pop(key, None)
         source.pop("network_args_custom", None)
         source.pop("lora_type", None)
+        source.pop("train_block_indices", None)
+        if freeze_inserted_only:
+            source["freeze_inserted_only_training"] = True
+        else:
+            source.pop("freeze_inserted_only_training", None)
+    elif freeze_inserted_only:
+        source.pop("freeze_inserted_only_training", None)
+        if _is_empty_value(source.get("train_block_indices")):
+            source["train_block_indices"] = INSERTED_40_BLOCK_INDICES_CSV
+    else:
+        source.pop("freeze_inserted_only_training", None)
 
     custom_network_args = source.pop("network_args_custom", None)
     if not finetune:
@@ -664,6 +690,18 @@ def adapt_anima_config(
             elif not _is_empty_value(value):
                 network_args.append(f"{field}={value}")
         if network_args:
+            source["network_args"] = network_args
+
+    if not finetune:
+        leftover_block_indices = source.pop("train_block_indices", None)
+        if not _is_empty_value(leftover_block_indices) and str(network_module).startswith("networks."):
+            network_args = list(source.get("network_args") or [])
+            has_block_indices = any(
+                isinstance(item, str) and item.strip().lower().startswith("train_block_indices=")
+                for item in network_args
+            )
+            if not has_block_indices:
+                network_args.append(f"train_block_indices={leftover_block_indices}")
             source["network_args"] = network_args
 
     for key, value in source.items():

@@ -25,9 +25,15 @@ VOLUME_RESERVE_BYTES = 2 * GiB
 AUTOSAVE_MIN_FREE_BYTES = 500 * MiB
 DEFAULT_FINETUNE_CHECKPOINT_BYTES = 15 * GiB
 
-ANIMA_LORA_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-lora-fast"})
+ANIMA_LORA_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-lora-fast", "anima-2.9b"})
 SD_FAMILY_LORA_TYPES = frozenset({"sd-lora", "sdxl-lora", "flux-lora"})
-FINETUNE_TYPES = frozenset({"anima-finetune", "sdxl-finetune", "sd-dreambooth", "flux-finetune"})
+FINETUNE_TYPES = frozenset({
+    "anima-finetune",
+    "anima-2.9b-finetune",
+    "sdxl-finetune",
+    "sd-dreambooth",
+    "flux-finetune",
+})
 
 
 class DiskSpaceError(ValueError):
@@ -234,7 +240,14 @@ def estimate_training_disk_need(
     saves = _checkpoint_count(config)
     breakdown: dict[str, int] = {"checkpoint_count": saves, "image_count": images}
 
-    if model_train_type in FINETUNE_TYPES:
+    is_29b_finetune = (
+        model_train_type == "anima-2.9b-finetune"
+        or (
+            model_train_type == "anima-2.9b"
+            and str(config.get("anima_29b_train_mode") or "lora").strip().lower() == "finetune"
+        )
+    )
+    if model_train_type in FINETUNE_TYPES or is_29b_finetune:
         one = _finetune_checkpoint_bytes(config)
         output = one * saves
         breakdown["checkpoint_bytes_each"] = one
@@ -261,7 +274,7 @@ def estimate_training_disk_need(
         breakdown["latents_cache_bytes"] = latent
 
     if _truthy(config.get("cache_text_encoder_outputs_to_disk")):
-        per = 8 * MiB if model_train_type in ANIMA_LORA_TYPES or model_train_type == "anima-finetune" else 2 * MiB
+        per = 8 * MiB if model_train_type in ANIMA_LORA_TYPES or model_train_type in {"anima-finetune", "anima-2.9b", "anima-2.9b-finetune"} else 2 * MiB
         te = images * per
         cache += te
         breakdown["text_encoder_cache_bytes"] = te

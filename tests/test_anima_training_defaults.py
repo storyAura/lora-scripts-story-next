@@ -208,6 +208,44 @@ class AnimaTrainingDefaultsTests(unittest.TestCase):
         self.assertEqual(config["learning_rate"], "2e-5")
         self.assertNotIn("unet_lr", config)
 
+    def test_29b_finetune_page_uses_the_same_lr_normalization(self):
+        config = {
+            "unet_lr": "0.0001",
+            "optimizer_type": "AdamW8bit",
+            "attn_mode": "torch",
+        }
+
+        apply_anima_training_defaults(config, "anima-2.9b-finetune")
+
+        self.assertEqual(config["learning_rate"], "1e-5")
+        self.assertNotIn("unet_lr", config)
+
+    def test_legacy_29b_finetune_mode_uses_the_same_lr_normalization(self):
+        config = {
+            "anima_29b_train_mode": "finetune",
+            "unet_lr": "0.0001",
+            "optimizer_type": "AdamW8bit",
+            "attn_mode": "torch",
+        }
+
+        apply_anima_training_defaults(config, "anima-2.9b")
+
+        self.assertEqual(config["learning_rate"], "1e-5")
+        self.assertNotIn("unet_lr", config)
+
+    def test_29b_lora_mode_keeps_adapter_unet_lr(self):
+        config = {
+            "anima_29b_train_mode": "lora",
+            "unet_lr": "5e-5",
+            "optimizer_type": "AdamW8bit",
+            "attn_mode": "torch",
+        }
+
+        apply_anima_training_defaults(config, "anima-2.9b")
+
+        self.assertEqual(config["unet_lr"], 5e-5)
+        self.assertNotIn("learning_rate", config)
+
 
 if __name__ == "__main__":
     unittest.main()

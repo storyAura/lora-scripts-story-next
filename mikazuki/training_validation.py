@@ -10,10 +10,34 @@ from mikazuki.multires import (
 )
 
 
-ANIMA_LORA_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora"})
+ANIMA_LORA_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-2.9b"})
+ANIMA_29B_TRAIN_TYPE = "anima-2.9b"
+ANIMA_29B_FINETUNE_TYPE = "anima-2.9b-finetune"
 # Same-epoch multi-resolution expansion is implemented in the standard Anima
 # trainer only; the Fast backend has its own preprocess pipeline.
-MULTIRES_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-finetune"})
+MULTIRES_TRAIN_TYPES = frozenset({
+    "anima-lora",
+    "sd3-lora",
+    "anima-finetune",
+    "anima-2.9b",
+    "anima-2.9b-finetune",
+})
+LYCORIS_OR_LOHA_LORA_TYPES = frozenset(
+    {"rslora", "dora", "lokr", "loha", "bokr", "bora", "gsokr", "glora_boft"}
+)
+NATIVE_ANIMA_FREEZE_MODULES = frozenset(
+    {
+        "networks.lora_anima",
+        "networks.lora_fa_anima",
+        "networks.vera_anima",
+        "networks.delora_anima",
+        "networks.waveft_anima",
+        "networks.deft_anima",
+        "networks.moslora_anima",
+        "networks.tlora_anima",
+        "networks.cdka_anima",
+    }
+)
 # Removed algorithms: a stale saved config must fail loudly instead of silently
 # training something else. "tglokr" (time-gated GLoKR) removed 2026-07-28;
 # "glokr" removed from the GUI 2026-07-29 (the vendored module remains for
@@ -116,6 +140,26 @@ def _boolean(
     )
 
 
+def is_anima_29b_finetune(
+    config: Mapping[str, object],
+    model_train_type: str | None = None,
+) -> bool:
+    train_type = str(model_train_type or config.get("model_train_type") or "").strip().lower()
+    if train_type == ANIMA_29B_FINETUNE_TYPE:
+        return True
+    if train_type != ANIMA_29B_TRAIN_TYPE:
+        return False
+    return str(config.get("anima_29b_train_mode") or "lora").strip().lower() == "finetune"
+
+
+def is_anima_finetune_training(
+    config: Mapping[str, object],
+    model_train_type: str | None = None,
+) -> bool:
+    train_type = str(model_train_type or config.get("model_train_type") or "").strip().lower()
+    return train_type == "anima-finetune" or is_anima_29b_finetune(config, train_type)
+
+
 def validate_training_configuration(
     config: Mapping[str, object],
     model_train_type: str,
@@ -196,7 +240,7 @@ def validate_training_configuration(
             "requires base_model_quantization='int8' or 'nf4'",
         )
     if quantization_mode != "none":
-        if normalized_train_type == "anima-finetune":
+        if is_anima_finetune_training(config, normalized_train_type):
             raise TrainingConfigurationError(
                 "base_model_quantization",
                 config.get("base_model_quantization"),
@@ -347,6 +391,25 @@ def validate_training_configuration(
                 config.get("random_crop"),
                 "random_crop makes per-tier latent caches non-reproducible; "
                 "disable it for multires_per_image",
+            )
+
+    if (
+        _is_truthy(config.get("freeze_inserted_only_training"))
+        and not is_anima_finetune_training(config, normalized_train_type)
+    ):
+        network_module = str(config.get("network_module") or "").strip()
+        freeze_lora_type = str(config.get("lora_type") or "").strip().lower()
+        if (
+            network_module == "lycoris.kohya"
+            or network_module == "networks.loha"
+            or freeze_lora_type in LYCORIS_OR_LOHA_LORA_TYPES
+            or (network_module and network_module not in NATIVE_ANIMA_FREEZE_MODULES)
+        ):
+            raise TrainingConfigurationError(
+                "freeze_inserted_only_training",
+                config.get("freeze_inserted_only_training"),
+                "只训插入层目前仅支持原生 networks.*_anima 适配器；"
+                "请改用 LoRA / LoRA+ 等，或关闭该开关后使用 LyCORIS（将训练全部 40 层）",
             )
 
     if normalized_train_type not in ANIMA_LORA_TRAIN_TYPES:

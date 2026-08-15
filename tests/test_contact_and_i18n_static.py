@@ -184,6 +184,8 @@ class ContactAndI18nStaticTests(unittest.TestCase):
         chrome = json.loads(CHROME_DICT.read_text(encoding="utf-8"))
         self.assertIn("主推训练入口", html)
         self.assertIn("主推训练入口", js)
+        self.assertIn('href="/lora/sd3.html"', html)
+        self.assertIn('href:"/lora/sd3.html"', js)
         self.assertNotIn("两种模式", html)
         self.assertNotIn("两种模式", js)
         self.assertNotIn("不要逞强", js)

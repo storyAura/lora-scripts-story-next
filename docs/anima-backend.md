@@ -4,8 +4,8 @@ Anima training is maintained against [`kohya-ss/sd-scripts`](https://github.com/
 
 The stable local launch paths are:
 
-- **LoRA / 网络训练**：`scripts/dev/anima_train_network.py` → 上游 `anima_train_network.py`（`model_train_type`: `anima-lora` / `sd3-lora`）
-- **全量微调**：`scripts/dev/anima_train.py` → 上游 `anima_train.py`（`model_train_type`: `anima-finetune`）
+- **LoRA / 网络训练**：`scripts/dev/anima_train_network.py` → 上游 `anima_train_network.py`（`model_train_type`: `anima-lora` / `sd3-lora` / `anima-2.9b`）
+- **全量微调**：`scripts/dev/anima_train.py` → 上游 `anima_train.py`（`model_train_type`: `anima-finetune` / `anima-2.9b-finetune`）
 
 Both are compatibility wrappers. The training implementation is loaded from the pinned upstream sd-scripts source configured in `config/anima_backend.toml`.
 

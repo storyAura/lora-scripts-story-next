@@ -32,6 +32,13 @@ class QueueEditHandoverStaticTests(unittest.TestCase):
     def test_dreambooth_page_path_is_the_dreambooth_route(self):
         self.assertIn('"sd-dreambooth": { path: "/dreambooth/" }', self.js)
 
+    def test_anima_29b_page_map(self):
+        self.assertIn('"anima-2.9b": { path: "/lora/anima-2.9b.html" }', self.js)
+        self.assertIn(
+            '"anima-2.9b-finetune": { path: "/lora/anima-2.9b-finetune.html" }',
+            self.js,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,7 +58,10 @@ class AnimaFastStaticIntegrationTests(unittest.TestCase):
         self.assertIn('"/plugins/anima-lora/preflight"', source)
         self.assertIn('"/plugins/anima-lora/dry-run"', source)
         self.assertIn('"/plugins/anima-lora/install/log/stream/{task_id}"', source)
-        self.assertLess(source.index("model_train_type == ANIMA_FAST_TRAIN_TYPE"), source.index("trainer_file = trainer_mapping[model_train_type]"))
+        self.assertLess(
+            source.index("model_train_type == ANIMA_FAST_TRAIN_TYPE"),
+            source.index("trainer_file = resolve_trainer_file(model_train_type, config)"),
+        )
 
     def test_frontend_dist_registers_anima_fast_entry(self):
         app = Path("frontend/dist/assets/app.547295de.js").read_text(encoding="utf-8")

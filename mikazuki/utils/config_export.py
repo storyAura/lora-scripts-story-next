@@ -15,8 +15,8 @@ from mikazuki.utils.config_import import (
 )
 from mikazuki.utils.train_utils import ensure_enable_preview_flag, fix_config_types
 
-ANIMA_EXPORT_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora"})
-ANIMA_FINETUNE_TRAIN_TYPES = frozenset({"anima-finetune"})
+ANIMA_EXPORT_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-2.9b"})
+ANIMA_FINETUNE_TRAIN_TYPES = frozenset({"anima-finetune", "anima-2.9b-finetune"})
 
 _GUI_STRIP_KEYS = frozenset({
     "gpu_ids",
@@ -96,7 +96,14 @@ def normalize_config_for_export(
     ensure_enable_preview_flag(cfg)
     _ensure_gui_identity_fields(cfg, page_train_type=model_train_type)
 
-    if model_train_type in ANIMA_FINETUNE_TRAIN_TYPES:
+    is_29b_finetune = (
+        model_train_type == "anima-2.9b-finetune"
+        or (
+            model_train_type == "anima-2.9b"
+            and str(cfg.get("anima_29b_train_mode") or "lora").strip().lower() == "finetune"
+        )
+    )
+    if model_train_type in ANIMA_FINETUNE_TRAIN_TYPES or is_29b_finetune:
         adapted, warnings = adapt_anima_config(deepcopy(cfg), finetune=True)
         if adapted.get("network_args"):
             cfg["network_args"] = adapted["network_args"]

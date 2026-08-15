@@ -97,8 +97,16 @@ router.include_router(dataset_editor_router)
 router.include_router(train_queue_router)
 router.include_router(infer_router)
 
-ANIMA_TRAIN_TYPES = {"anima-lora", "sd3-lora", "anima-finetune"}
+ANIMA_TRAIN_TYPES = {
+    "anima-lora",
+    "sd3-lora",
+    "anima-finetune",
+    "anima-2.9b",
+    "anima-2.9b-finetune",
+}
 ANIMA_FINETUNE_TYPE = "anima-finetune"
+ANIMA_29B_TRAIN_TYPE = "anima-2.9b"
+ANIMA_29B_FINETUNE_TYPE = "anima-2.9b-finetune"
 ANIMA_DEFAULT_SAMPLE_POSITIVE = (
     "1girl, solo, smile, japanese clothes, kimono, blue eyes, closed mouth, upper body, looki"
     "ng at viewer, hair ornament, long hair, yellow kimono, black hair, anime coloring, yukat"
@@ -134,9 +142,19 @@ trainer_mapping = {
     "sd3-lora": "./scripts/dev/anima_train_network.py",
     "anima-lora": "./scripts/dev/anima_train_network.py",
     "anima-finetune": "./scripts/dev/anima_train.py",
+    "anima-2.9b": "./scripts/dev/anima_train_network.py",
+    "anima-2.9b-finetune": "./scripts/dev/anima_train.py",
     "flux-lora": "./scripts/dev/flux_train_network.py",
     "flux-finetune": "./scripts/dev/flux_train.py",
 }
+
+
+def resolve_trainer_file(model_train_type: str, config: dict) -> str | None:
+    if model_train_type == ANIMA_29B_TRAIN_TYPE:
+        mode = str(config.get("anima_29b_train_mode") or "lora").strip().lower()
+        if mode == "finetune":
+            return "./scripts/dev/anima_train.py"
+    return trainer_mapping.get(model_train_type)
 
 
 def _add_training_warning(config: dict, message: str) -> None:
@@ -455,7 +473,10 @@ def apply_anima_training_defaults(config: dict, model_train_type: str):
     if model_train_type not in ANIMA_TRAIN_TYPES:
         return
 
-    if model_train_type == ANIMA_FINETUNE_TYPE:
+    if model_train_type in {ANIMA_FINETUNE_TYPE, ANIMA_29B_FINETUNE_TYPE} or (
+        model_train_type == ANIMA_29B_TRAIN_TYPE
+        and str(config.get("anima_29b_train_mode") or "lora").strip().lower() == "finetune"
+    ):
         lr = str(config.get("learning_rate", "")).strip()
         if not lr or lr in ANIMA_LEGACY_UNET_LR:
             unet_lr = str(config.get("unet_lr", "")).strip()
@@ -745,7 +766,8 @@ async def submit_training_config(config: dict):
             log.error(f"Anima Fast launch failed: {exc}")
             return APIResponseFail(message=f"Anima Fast launch failed: {exc}")
 
-    if model_train_type not in trainer_mapping:
+    trainer_file = resolve_trainer_file(model_train_type, config)
+    if not trainer_file:
         return APIResponseFail(
             message=f"不支持的训练类型: {model_train_type}",
             data={"model_train_type": model_train_type},
@@ -762,7 +784,6 @@ async def submit_training_config(config: dict):
     config["pretrained_model_name_or_path"] = pretrained_model
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(train_data_dir, limit=200)) >= 200 else 2
-    trainer_file = trainer_mapping[model_train_type]
     apply_sdxl_prediction_type(config, model_train_type)
     attn_failure = _apply_anima_training_defaults_or_fail(config, model_train_type)
     if attn_failure is not None:

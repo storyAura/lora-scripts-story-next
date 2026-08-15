@@ -11,6 +11,8 @@ class TrainingSchemaSafetyTests(unittest.TestCase):
             PROJECT_ROOT / "mikazuki" / "schema" / "sd3-lora.ts",
             PROJECT_ROOT / "mikazuki" / "schema" / "anima-lora-fast.ts",
             PROJECT_ROOT / "mikazuki" / "schema" / "anima-finetune.ts",
+            PROJECT_ROOT / "mikazuki" / "schema" / "anima-2.9b.ts",
+            PROJECT_ROOT / "mikazuki" / "schema" / "anima-2.9b-finetune.ts",
         )
 
         for schema_path in schema_paths:

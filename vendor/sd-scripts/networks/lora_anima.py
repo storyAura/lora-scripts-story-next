@@ -19,6 +19,36 @@ def _is_true(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_block_selection(selection: str, total_blocks: int) -> List[bool]:
+    if selection == "all":
+        return [True] * total_blocks
+    if selection in {"none", ""}:
+        return [False] * total_blocks
+
+    selected = [False] * total_blocks
+    for raw_range in selection.split(","):
+        item = raw_range.strip()
+        if not item:
+            continue
+        if "-" in item:
+            start_text, end_text = map(str.strip, item.split("-", 1))
+            start, end = int(start_text), int(end_text)
+            if not (0 <= start < total_blocks and 0 <= end < total_blocks and start <= end):
+                raise ValueError(
+                    f"train_block_indices range {item!r} is outside 0-{total_blocks - 1}"
+                )
+            for index in range(start, end + 1):
+                selected[index] = True
+            continue
+        index = int(item)
+        if not 0 <= index < total_blocks:
+            raise ValueError(
+                f"train_block_indices index {index} is outside 0-{total_blocks - 1}"
+            )
+        selected[index] = True
+    return selected
+
+
 class LoRAModule(torch.nn.Module):
     """
     replaces forward method of the original Linear, instead of replacing the original Linear module.
@@ -330,6 +360,11 @@ def create_network(
     else:
         reg_dims = None
 
+    train_block_indices = kwargs.get("train_block_indices", None)
+    if train_block_indices is not None:
+        num_blocks = len(unet.blocks) if hasattr(unet, "blocks") else 999
+        train_block_indices = parse_block_selection(str(train_block_indices), num_blocks)
+
     network = network_factory(
         text_encoders,
         unet,
@@ -346,6 +381,7 @@ def create_network(
         reg_lrs=reg_lrs,
         verbose=verbose,
         module_class=module_class,
+        train_block_indices=train_block_indices,
     )
 
     loraplus_lr_ratio = kwargs.get("loraplus_lr_ratio", None)
@@ -450,6 +486,7 @@ class LoRANetwork(torch.nn.Module):
         reg_dims: Optional[Dict[str, int]] = None,
         reg_lrs: Optional[Dict[str, float]] = None,
         verbose: Optional[bool] = False,
+        train_block_indices: Optional[List[bool]] = None,
     ) -> None:
         super().__init__()
         self.multiplier = multiplier
@@ -461,6 +498,7 @@ class LoRANetwork(torch.nn.Module):
         self.train_llm_adapter = train_llm_adapter
         self.reg_dims = reg_dims
         self.reg_lrs = reg_lrs
+        self.train_block_indices = train_block_indices
 
         self.loraplus_lr_ratio = None
         self.loraplus_unet_lr_ratio = None
@@ -547,6 +585,23 @@ class LoRANetwork(torch.nn.Module):
                                     if is_linear or is_conv2d_1x1:
                                         dim = default_dim if default_dim is not None else self.lora_dim
                                         alpha_val = self.alpha
+
+                            if (
+                                is_unet
+                                and dim
+                                and self.train_block_indices is not None
+                                and "blocks_" in lora_name
+                            ):
+                                parts = lora_name.split("_")
+                                for part_index, part in enumerate(parts):
+                                    if part == "blocks" and part_index + 1 < len(parts):
+                                        try:
+                                            block_index = int(parts[part_index + 1])
+                                            if not self.train_block_indices[block_index]:
+                                                dim = 0
+                                        except (ValueError, IndexError):
+                                            pass
+                                        break
 
                             if dim is None or dim == 0:
                                 if is_linear or is_conv2d_1x1:

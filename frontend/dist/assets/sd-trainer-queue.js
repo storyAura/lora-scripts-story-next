@@ -27,6 +27,8 @@
     "sd3-lora": { path: "/lora/sd3.html" },
     "anima-finetune": { path: "/lora/anima-finetune.html" },
     "anima-lora-fast": { path: "/lora/anima-fast.html" },
+    "anima-2.9b": { path: "/lora/anima-2.9b.html" },
+    "anima-2.9b-finetune": { path: "/lora/anima-2.9b-finetune.html" },
     "flux-lora": { path: "/lora/flux.html" },
     "flux-finetune": { path: "/lora/flux.html" },
     "sd-lora": { path: "/lora/master.html" },

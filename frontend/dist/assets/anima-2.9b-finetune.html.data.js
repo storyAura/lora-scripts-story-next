@@ -1,0 +1,1 @@
+const e=JSON.parse("{\"key\": \"v-anima-29b-ft\", \"path\": \"/lora/anima-2.9b-finetune.html\", \"title\": \"Anima2.9B Finetune\", \"lang\": \"en-US\", \"frontmatter\": {\"example\": true, \"trainType\": \"anima-2.9b-finetune\"}, \"excerpt\": \"\", \"headers\": [], \"filePathRelative\": \"lora/anima-2.9b-finetune.md\"}");export{e as data};

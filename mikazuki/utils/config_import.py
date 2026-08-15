@@ -10,6 +10,9 @@ from typing import Any
 from mikazuki.utils.train_utils import ensure_enable_preview_flag
 
 ANIMA_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora"})
+ANIMA_29B_TRAIN_TYPES = frozenset({"anima-2.9b"})
+ANIMA_29B_FINETUNE_TRAIN_TYPES = frozenset({"anima-2.9b-finetune"})
+ANIMA_LORA_TYPE_PAGES = ANIMA_TRAIN_TYPES | ANIMA_29B_TRAIN_TYPES
 ANIMA_FAST_TRAIN_TYPES = frozenset({"anima-lora-fast"})
 FLUX_TRAIN_TYPES = frozenset({"flux-lora", "flux-finetune"})
 LUMINA_TRAIN_TYPES = frozenset({"lumina-lora"})
@@ -95,6 +98,14 @@ ANIMA_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"qwen3", re.I), "文本模型路径含 qwen3"),
 )
 
+ANIMA_29B_CONFIG_MARKERS = frozenset({
+    "anima_29b_train_mode",
+    "freeze_inserted_only_training",
+})
+ANIMA_29B_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"anima[-_]?2\.?9b", re.I), "主模型路径含 anima-2.9b"),
+)
+
 FLUX_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"/flux/", re.I), "模型路径含 /flux/"),
     (re.compile(r"flux[-_]?dev", re.I), "主模型路径含 flux"),
@@ -143,6 +154,18 @@ PAGE_SPECS: dict[str, dict[str, Any]] = {
         "accepted": ANIMA_FAST_TRAIN_TYPES,
         "default_train_type": "anima-lora-fast",
     },
+    "anima-2.9b": {
+        "label": "Anima 2.9B LoRA",
+        "path": "/lora/anima-2.9b.html",
+        "accepted": ANIMA_29B_TRAIN_TYPES,
+        "default_train_type": "anima-2.9b",
+    },
+    "anima-2.9b-finetune": {
+        "label": "Anima2.9B Finetune",
+        "path": "/lora/anima-2.9b-finetune.html",
+        "accepted": ANIMA_29B_FINETUNE_TRAIN_TYPES,
+        "default_train_type": "anima-2.9b-finetune",
+    },
     "flux-lora": {
         "label": "Flux LoRA 训练",
         "path": "/lora/flux.html",
@@ -185,6 +208,8 @@ TRAIN_TYPE_TARGETS: dict[str, dict[str, str]] = {
     "anima-lora": {"path": "/lora/sd3.html", "label": "Anima LoRA 训练"},
     "sd3-lora": {"path": "/lora/sd3.html", "label": "Anima LoRA 训练"},
     "anima-lora-fast": {"path": "/lora/anima-fast.html", "label": "Anima Fast 训练"},
+    "anima-2.9b": {"path": "/lora/anima-2.9b.html", "label": "Anima 2.9B LoRA"},
+    "anima-2.9b-finetune": {"path": "/lora/anima-2.9b-finetune.html", "label": "Anima2.9B Finetune"},
     "flux-lora": {"path": "/lora/flux.html", "label": "Flux LoRA 训练"},
     "flux-finetune": {"path": "/lora/flux.html", "label": "Flux 训练"},
     "lumina-lora": {"path": "/lora/lumina.html", "label": "Lumina LoRA 训练"},
@@ -245,11 +270,18 @@ def _collect_path_reasons(
     return reasons
 
 
-def _collect_prefix_key_reasons(config: dict, prefix: str, label: str) -> list[str]:
+def _collect_prefix_key_reasons(
+    config: dict,
+    prefix: str,
+    label: str,
+    exclude_prefixes: tuple[str, ...] = (),
+) -> list[str]:
     return [
         f"字段 {key}"
         for key in sorted(config)
-        if key.startswith(prefix) and _is_present(config, key)
+        if key.startswith(prefix)
+        and not any(key.startswith(skip) for skip in exclude_prefixes)
+        and _is_present(config, key)
     ]
 
 
@@ -260,6 +292,7 @@ def _score_family(
     path_rules: tuple[tuple[re.Pattern[str], str], ...],
     prefix: str | None = None,
     prefix_label: str | None = None,
+    prefix_exclude: tuple[str, ...] = (),
     network_modules: frozenset[str] | None = None,
     marker_weight: int = 3,
     path_weight: int = 4,
@@ -285,7 +318,9 @@ def _score_family(
         reasons.append(reason)
 
     if prefix and prefix_label:
-        for reason in _collect_prefix_key_reasons(config, prefix, prefix_label):
+        for reason in _collect_prefix_key_reasons(
+            config, prefix, prefix_label, exclude_prefixes=prefix_exclude
+        ):
             score += prefix_weight
             reasons.append(reason)
 
@@ -294,7 +329,35 @@ def _score_family(
 
 def analyze_train_type(config: dict) -> TrainTypeAnalysis:
     """Score config content across training families and return the best match."""
+    explicit = _normalize_train_type(config.get("model_train_type"))
+    if explicit in ANIMA_29B_FINETUNE_TRAIN_TYPES or (
+        explicit in ANIMA_29B_TRAIN_TYPES
+        and str(config.get("anima_29b_train_mode") or "lora").strip().lower() == "finetune"
+    ):
+        return TrainTypeAnalysis(
+            train_type="anima-2.9b-finetune",
+            reasons=["model_train_type=anima-2.9b-finetune"]
+            if explicit in ANIMA_29B_FINETUNE_TRAIN_TYPES
+            else ["anima_29b_train_mode=finetune"],
+            scores={"anima-2.9b-finetune": 100},
+        )
+    if explicit in ANIMA_29B_TRAIN_TYPES:
+        return TrainTypeAnalysis(
+            train_type="anima-2.9b",
+            reasons=["model_train_type=anima-2.9b"],
+            scores={"anima-2.9b": 100},
+        )
+
     families: list[tuple[str, int, list[str]]] = []
+
+    anima_29b_score, anima_29b_reasons = _score_family(
+        config,
+        marker_keys=ANIMA_29B_CONFIG_MARKERS,
+        path_rules=ANIMA_29B_PATH_RULES,
+        marker_weight=8,
+        path_weight=8,
+    )
+    families.append(("anima-2.9b", anima_29b_score, anima_29b_reasons))
 
     anima_fast_score, anima_fast_reasons = _score_family(
         config,
@@ -310,6 +373,7 @@ def analyze_train_type(config: dict) -> TrainTypeAnalysis:
         path_rules=ANIMA_PATH_RULES,
         prefix="anima_",
         prefix_label="Anima",
+        prefix_exclude=("anima_29b_",),
         network_modules=ANIMA_NETWORK_MODULES,
     )
     families.append(("anima-lora", anima_score, anima_reasons))
@@ -363,6 +427,10 @@ def _family_of(train_type: str | None) -> str | None:
         return None
     if train_type in ANIMA_TRAIN_TYPES:
         return "anima"
+    if train_type in ANIMA_29B_FINETUNE_TRAIN_TYPES:
+        return "anima-2.9b-finetune"
+    if train_type in ANIMA_29B_TRAIN_TYPES:
+        return "anima-2.9b"
     if train_type in ANIMA_FAST_TRAIN_TYPES:
         return "anima-fast"
     if train_type in FLUX_TRAIN_TYPES:
@@ -512,6 +580,7 @@ _ANIMA_NETWORK_ARG_TO_UI: dict[str, dict[str, str]] = {
         "pissa_oversample": "pissa_oversample",
         "pissa_apply_conv2d": "pissa_apply_conv2d",
         "pissa_export_mode": "pissa_export_mode",
+        "train_block_indices": "train_block_indices",
     },
     "networks.vera_anima": {
         "vera_projection_seed": "vera_projection_seed",
@@ -677,7 +746,11 @@ def _sanitize_arg_lines(config: dict, key: str) -> None:
 def _apply_anima_lora_type_consts(config: dict) -> None:
     """Force branch-consistent hidden consts so the lora_type union keeps matching."""
     train_type = _normalize_train_type(config.get("model_train_type"))
-    if train_type not in ANIMA_TRAIN_TYPES:
+    if train_type not in ANIMA_LORA_TYPE_PAGES:
+        return
+    if train_type in ANIMA_29B_TRAIN_TYPES and str(
+        config.get("anima_29b_train_mode") or "lora"
+    ).strip().lower() == "finetune":
         return
     lora_type = str(config.get("lora_type") or "").strip()
     if not lora_type:
@@ -689,6 +762,29 @@ def _apply_anima_lora_type_consts(config: dict) -> None:
     consts = ANIMA_LORA_TYPE_BRANCH_CONSTS.get(lora_type)
     if consts:
         config.update(consts)
+
+
+def _hydrate_inserted_only_freeze_from_network_args(config: dict) -> None:
+    """Restore the 2.9B freeze switch from train_block_indices when it matches pre1."""
+    if config.get("freeze_inserted_only_training") not in (None, ""):
+        return
+    raw_args = config.get("network_args")
+    if not isinstance(raw_args, list):
+        return
+    from mikazuki.anima_backend.adapter import INSERTED_40_BLOCK_INDICES_CSV
+
+    expected = {part.strip() for part in INSERTED_40_BLOCK_INDICES_CSV.split(",") if part.strip()}
+    for item in raw_args:
+        parsed = _parse_network_arg_item(item)
+        if parsed is None:
+            continue
+        key, value = parsed
+        if key.lower() != "train_block_indices":
+            continue
+        actual = {part.strip() for part in value.split(",") if part.strip()}
+        if actual == expected:
+            config["freeze_inserted_only_training"] = True
+        return
 
 
 def _hydrate_target_res_for_ui(config: dict) -> None:
@@ -736,6 +832,7 @@ def _finalize_import_config(config: dict) -> dict:
     _sanitize_arg_lines(normalized, "optimizer_args")
     _hydrate_lycoris_ui_fields_from_network_args(normalized)
     _hydrate_anima_ui_fields_from_network_args(normalized)
+    _hydrate_inserted_only_freeze_from_network_args(normalized)
     _apply_anima_lora_type_consts(normalized)
     _hydrate_target_res_for_ui(normalized)
     ensure_enable_preview_flag(normalized)
