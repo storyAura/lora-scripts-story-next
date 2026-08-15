@@ -188,6 +188,8 @@ class MemoryEfficientSafeOpen:
             mm = np.memmap(self.filename, mode="c", dtype=np.uint8, offset=tensor_offset, shape=(num_bytes,))
             byte_tensor = torch.from_numpy(mm)  # zero copy
             del mm
+            if byte_tensor.numel() != num_bytes:
+                raise RuntimeError(self._truncated_read_message(key, tensor_offset, num_bytes, byte_tensor.numel()))
 
             # Deserialize tensor (view and reshape)
             cpu_tensor = self._deserialize_tensor(byte_tensor, metadata)  # view and reshape
@@ -198,14 +200,10 @@ class MemoryEfficientSafeOpen:
             del cpu_tensor
             return gpu_tensor
 
-        # Standard file reading strategy for smaller tensors or CPU target
-        # seek to the specified position
-        self.file.seek(tensor_offset)
-
-        # read directly into a numpy array by numpy.fromfile without intermediate copy
-        numpy_array = np.fromfile(self.file, dtype=np.uint8, count=num_bytes)
-        byte_tensor = torch.from_numpy(numpy_array)
-        del numpy_array
+        # Standard file reading. Do not use numpy.fromfile() on this handle:
+        # the header was read with Python buffered IO, and fromfile uses the OS fd
+        # offset, which desyncs on Linux/NFS (AutoDL) and yields short/wrong bytes.
+        byte_tensor = self._read_tensor_bytes(key, tensor_offset, num_bytes)
 
         # deserialize (view and reshape)
         deserialized_tensor = self._deserialize_tensor(byte_tensor, metadata)
@@ -213,6 +211,24 @@ class MemoryEfficientSafeOpen:
 
         # cast to target dtype and move to device
         return deserialized_tensor.to(device=device, dtype=target_dtype, non_blocking=non_blocking)
+
+    def _truncated_read_message(self, key: str, tensor_offset: int, num_bytes: int, got: int) -> str:
+        try:
+            file_size = os.path.getsize(self.filename)
+        except OSError:
+            file_size = -1
+        return (
+            f"Truncated safetensors read for '{key}' in {self.filename}: "
+            f"expected {num_bytes} bytes at offset {tensor_offset}, got {got}. "
+            f"File size is {file_size} bytes. The checkpoint is incomplete — re-download it."
+        )
+
+    def _read_tensor_bytes(self, key: str, tensor_offset: int, num_bytes: int) -> torch.Tensor:
+        self.file.seek(tensor_offset)
+        raw = self.file.read(num_bytes)
+        if len(raw) != num_bytes:
+            raise RuntimeError(self._truncated_read_message(key, tensor_offset, num_bytes, len(raw)))
+        return torch.from_numpy(np.frombuffer(raw, dtype=np.uint8).copy())
 
     def _deserialize_tensor(self, byte_tensor: torch.Tensor, metadata: Dict):
         """Deserialize byte tensor to the correct shape and dtype.
@@ -226,13 +242,29 @@ class MemoryEfficientSafeOpen:
         """
         dtype = self._get_torch_dtype(metadata["dtype"])
         shape = metadata["shape"]
+        n_expected = 1
+        for dim in shape:
+            n_expected *= int(dim)
 
         # Handle special float8 types
         if metadata["dtype"] in ["F8_E5M2", "F8_E4M3"]:
+            if byte_tensor.numel() != n_expected:
+                raise RuntimeError(
+                    f"safetensors tensor size mismatch for shape {shape}: "
+                    f"expected {n_expected} bytes, got {byte_tensor.numel()}"
+                )
             return self._convert_float8(byte_tensor, metadata["dtype"], shape)
 
-        # Standard conversion: view as target dtype and reshape
-        return byte_tensor.view(dtype).reshape(shape)
+        viewed = byte_tensor.view(dtype)
+        if viewed.numel() != n_expected:
+            raise RuntimeError(
+                f"safetensors tensor size mismatch: header shape {list(shape)} "
+                f"needs {n_expected} {metadata['dtype']} elements, but read "
+                f"{viewed.numel()} elements ({byte_tensor.numel()} bytes). "
+                "The checkpoint is truncated or was read incorrectly (cloud-disk mmap/fromfile). "
+                "Re-download the file and retry."
+            )
+        return viewed.reshape(shape)
 
     @staticmethod
     def _get_torch_dtype(dtype_str):

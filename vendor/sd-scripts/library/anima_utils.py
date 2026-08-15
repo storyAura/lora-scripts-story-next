@@ -49,6 +49,7 @@ def count_anima_blocks(state_dict_keys) -> int:
 
 
 _SAFETENSORS_HEADER_LIMIT = 64 * 1024 * 1024
+ANIMA_29B_PREVIEW_BYTES = 5843204206
 
 
 def _incomplete_checkpoint_message(dit_path: str, exc: BaseException) -> str:
@@ -57,17 +58,17 @@ def _incomplete_checkpoint_message(dit_path: str, exc: BaseException) -> str:
     except OSError:
         size = -1
     return (
-        f"Failed to read Anima DiT safetensors header from {dit_path} "
+        f"Failed to read Anima DiT safetensors from {dit_path} "
         f"(size={size} bytes): {exc}. "
-        "This is usually a truncated download (MetadataIncompleteBuffer) or a "
-        "cloud-disk mmap issue. Re-download the checkpoint and check the file "
-        "size (Anima-2.9B-preview-v1.safetensors is about 5.4 GiB / 5843204206 bytes). "
+        "This is usually a truncated download or a cloud-disk mmap/fromfile issue. "
+        "Re-download the checkpoint and check the file size "
+        f"(Anima-2.9B-preview-v1.safetensors is about 5.4 GiB / {ANIMA_29B_PREVIEW_BYTES} bytes). "
         "截断或不完整的 safetensors：请重新下载底模并核对文件大小。"
     )
 
 
-def _list_safetensors_keys_from_header(dit_path: str) -> List[str]:
-    """List tensor keys by reading the JSON header only (no mmap / rust safe_open)."""
+def _read_safetensors_header(dit_path: str) -> tuple:
+    """Return (header, header_len, file_size). Reads JSON header only (no mmap)."""
     size = os.path.getsize(dit_path)
     if size < 8:
         raise ValueError(f"file is too small to be safetensors ({size} bytes)")
@@ -88,6 +89,40 @@ def _list_safetensors_keys_from_header(dit_path: str) -> List[str]:
     header = json.loads(raw.decode("utf-8"))
     if not isinstance(header, dict):
         raise ValueError("safetensors header JSON is not an object")
+    return header, header_len, size
+
+
+def _expected_safetensors_nbytes(header: dict, header_len: int) -> int:
+    max_end = 0
+    for key, meta in header.items():
+        if key == "__metadata__" or not isinstance(meta, dict):
+            continue
+        offsets = meta.get("data_offsets")
+        if isinstance(offsets, (list, tuple)) and len(offsets) >= 2:
+            max_end = max(max_end, int(offsets[1]))
+    return 8 + header_len + max_end
+
+
+def assert_anima_safetensors_payload_complete(dit_path: str) -> None:
+    """Fail fast if the header is intact but tensor bytes were truncated."""
+    try:
+        header, header_len, size = _read_safetensors_header(dit_path)
+    except Exception as exc:
+        raise RuntimeError(_incomplete_checkpoint_message(dit_path, exc)) from exc
+    expected = _expected_safetensors_nbytes(header, header_len)
+    if size < expected:
+        raise RuntimeError(
+            f"Anima DiT safetensors payload is truncated: {dit_path} is {size} bytes "
+            f"but the header requires at least {expected} bytes. "
+            "Re-download the checkpoint "
+            f"(Anima-2.9B-preview-v1.safetensors is about 5.4 GiB / {ANIMA_29B_PREVIEW_BYTES} bytes). "
+            "截断的底模：请重新下载并核对文件大小。"
+        )
+
+
+def _list_safetensors_keys_from_header(dit_path: str) -> List[str]:
+    """List tensor keys by reading the JSON header only (no mmap / rust safe_open)."""
+    header, _, _ = _read_safetensors_header(dit_path)
     return [key for key in header if key != "__metadata__"]
 
 
@@ -197,19 +232,28 @@ def load_anima_model(
 
     # load model weights with dynamic fp8 optimization and LoRA merging if needed
     logger.info(f"Loading DiT model from {dit_path}, device={loading_device}")
+    if str(dit_path).endswith(".safetensors"):
+        assert_anima_safetensors_payload_complete(dit_path)
     rename_hooks = WeightTransformHooks(rename_hook=normalize_anima_checkpoint_key)
-    sd = load_safetensors_with_lora_and_fp8(
-        model_files=dit_path,
-        lora_weights_list=lora_weights_list,
-        lora_multipliers=lora_multipliers,
-        fp8_optimization=fp8_scaled,
-        calc_device=device,
-        move_to_device=(loading_device == device),
-        dit_weight_dtype=dit_weight_dtype,
-        target_keys=FP8_OPTIMIZATION_TARGET_KEYS,
-        exclude_keys=FP8_OPTIMIZATION_EXCLUDE_KEYS,
-        weight_transform_hooks=rename_hooks,
-    )
+    try:
+        sd = load_safetensors_with_lora_and_fp8(
+            model_files=dit_path,
+            lora_weights_list=lora_weights_list,
+            lora_multipliers=lora_multipliers,
+            fp8_optimization=fp8_scaled,
+            calc_device=device,
+            move_to_device=(loading_device == device),
+            dit_weight_dtype=dit_weight_dtype,
+            target_keys=FP8_OPTIMIZATION_TARGET_KEYS,
+            exclude_keys=FP8_OPTIMIZATION_EXCLUDE_KEYS,
+            disable_numpy_memmap=True,
+            weight_transform_hooks=rename_hooks,
+        )
+    except RuntimeError as exc:
+        text = str(exc).lower()
+        if any(token in text for token in ("truncated", "size mismatch", "incomplete", "invalid for input of size")):
+            raise RuntimeError(_incomplete_checkpoint_message(dit_path, exc)) from exc
+        raise
 
     if fp8_scaled:
         apply_fp8_monkey_patch(model, sd, use_scaled_mm=False)

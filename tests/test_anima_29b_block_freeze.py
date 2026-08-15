@@ -16,7 +16,12 @@ from library.anima_block_freeze import (  # noqa: E402
     INSERTED_40_BLOCK_INDICES,
     apply_inserted_only_training_freeze,
 )
-from library.anima_utils import count_anima_blocks, infer_anima_num_blocks  # noqa: E402
+from library.anima_utils import (  # noqa: E402
+    assert_anima_safetensors_payload_complete,
+    count_anima_blocks,
+    infer_anima_num_blocks,
+)
+from library.safetensors_utils import MemoryEfficientSafeOpen  # noqa: E402
 from networks.lora_anima import parse_block_selection  # noqa: E402
 
 
@@ -67,6 +72,47 @@ class CountAnimaBlocksTests(unittest.TestCase):
             path_28 = Path(tmp) / "anima-28.safetensors"
             save_file({key: torch.zeros(1) for key in _block_keys(28)}, str(path_28))
             self.assertEqual(infer_anima_num_blocks(str(path_28)), 28)
+
+    def test_header_intact_but_truncated_payload_fails_before_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anima-40.safetensors"
+            save_file({key: torch.zeros(8, 8) for key in _block_keys(40, "net.")}, str(path))
+            data = path.read_bytes()
+            header_len = int.from_bytes(data[:8], "little")
+            # Keep the JSON header so num_blocks can still be inferred.
+            path.write_bytes(data[: 8 + header_len + 32])
+            self.assertEqual(infer_anima_num_blocks(str(path)), 40)
+            with self.assertRaisesRegex(RuntimeError, "payload is truncated|at least"):
+                assert_anima_safetensors_payload_complete(str(path))
+
+    def test_complete_payload_passes_size_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anima-40.safetensors"
+            save_file({key: torch.zeros(2, 2) for key in _block_keys(40, "net.")}, str(path))
+            assert_anima_safetensors_payload_complete(str(path))
+
+
+class MemoryEfficientSafeOpenTests(unittest.TestCase):
+    def test_reads_complete_tensor_without_fromfile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "w.safetensors"
+            expected = torch.arange(16, dtype=torch.float32).reshape(4, 4)
+            save_file({"w": expected}, str(path))
+            with MemoryEfficientSafeOpen(str(path), disable_numpy_memmap=True) as handle:
+                loaded = handle.get_tensor("w")
+            self.assertEqual(tuple(loaded.shape), (4, 4))
+            self.assertTrue(torch.equal(loaded.cpu(), expected))
+
+    def test_truncated_payload_raises_readable_error_instead_of_reshape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "w.safetensors"
+            save_file({"w": torch.ones(64, 64)}, str(path))
+            data = path.read_bytes()
+            header_len = int.from_bytes(data[:8], "little")
+            path.write_bytes(data[: 8 + header_len + 80])
+            with MemoryEfficientSafeOpen(str(path), disable_numpy_memmap=True) as handle:
+                with self.assertRaisesRegex(RuntimeError, "Truncated safetensors read|size mismatch"):
+                    handle.get_tensor("w")
 
 
 class InsertedOnlyFreezeTests(unittest.TestCase):
