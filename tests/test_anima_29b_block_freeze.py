@@ -50,6 +50,13 @@ class CountAnimaBlocksTests(unittest.TestCase):
     def test_infer_falls_back_to_28_when_file_is_missing(self):
         self.assertEqual(infer_anima_num_blocks("missing-checkpoint.safetensors"), 28)
 
+    def test_infer_truncated_safetensors_raises_a_readable_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "truncated.safetensors"
+            path.write_bytes(b"not-a-header")
+            with self.assertRaisesRegex(RuntimeError, "truncated|incomplete|header"):
+                infer_anima_num_blocks(str(path))
+
     def test_infer_reads_safetensors_keys_without_requiring_full_load(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "anima-40.safetensors"

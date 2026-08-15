@@ -1,6 +1,8 @@
 # Anima model loading/saving utilities
 
+import json
 import os
+import struct
 from typing import Dict, List, Optional, Union
 import torch
 from safetensors.torch import load_file, save_file
@@ -46,15 +48,58 @@ def count_anima_blocks(state_dict_keys) -> int:
     return count
 
 
+_SAFETENSORS_HEADER_LIMIT = 64 * 1024 * 1024
+
+
+def _incomplete_checkpoint_message(dit_path: str, exc: BaseException) -> str:
+    try:
+        size = os.path.getsize(dit_path)
+    except OSError:
+        size = -1
+    return (
+        f"Failed to read Anima DiT safetensors header from {dit_path} "
+        f"(size={size} bytes): {exc}. "
+        "This is usually a truncated download (MetadataIncompleteBuffer) or a "
+        "cloud-disk mmap issue. Re-download the checkpoint and check the file "
+        "size (Anima-2.9B-preview-v1.safetensors is about 5.4 GiB / 5843204206 bytes). "
+        "截断或不完整的 safetensors：请重新下载底模并核对文件大小。"
+    )
+
+
+def _list_safetensors_keys_from_header(dit_path: str) -> List[str]:
+    """List tensor keys by reading the JSON header only (no mmap / rust safe_open)."""
+    size = os.path.getsize(dit_path)
+    if size < 8:
+        raise ValueError(f"file is too small to be safetensors ({size} bytes)")
+    with open(dit_path, "rb") as handle:
+        header_len_bytes = handle.read(8)
+        if len(header_len_bytes) < 8:
+            raise ValueError("truncated safetensors header length")
+        header_len = struct.unpack("<Q", header_len_bytes)[0]
+        if header_len == 0 or header_len > min(size - 8, _SAFETENSORS_HEADER_LIMIT):
+            raise ValueError(
+                f"invalid safetensors header length {header_len} for file size {size}"
+            )
+        raw = handle.read(header_len)
+        if len(raw) < header_len:
+            raise ValueError(
+                f"truncated safetensors header JSON ({len(raw)}/{header_len} bytes)"
+            )
+    header = json.loads(raw.decode("utf-8"))
+    if not isinstance(header, dict):
+        raise ValueError("safetensors header JSON is not an object")
+    return [key for key in header if key != "__metadata__"]
+
+
 def _list_checkpoint_keys(dit_path: str) -> Optional[List[str]]:
     if not dit_path or not os.path.isfile(dit_path):
         return None
-    if dit_path.endswith(".safetensors"):
-        from safetensors import safe_open
-
-        with safe_open(dit_path, framework="pt") as handle:
-            return list(handle.keys())
-    return None
+    if not dit_path.endswith(".safetensors"):
+        return None
+    try:
+        return _list_safetensors_keys_from_header(dit_path)
+    except Exception as exc:
+        raise RuntimeError(_incomplete_checkpoint_message(dit_path, exc)) from exc
 
 
 def infer_anima_num_blocks(dit_path: str, default: int = 28) -> int:
