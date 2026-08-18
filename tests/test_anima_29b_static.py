@@ -68,6 +68,15 @@ class Anima29bFrontendStaticTests(unittest.TestCase):
         self.assertIn("anima-2.9b-finetune", data)
         self.assertIn("/lora/anima-2.9b-finetune.html", data)
 
+    def test_sidebar_nav_patch_source_keeps_29b_entries(self):
+        """Re-running patch-sidebar-nav.py must not wipe 2.9B from NEW_SIDEBAR_JSON."""
+        src = (ROOT / "scripts" / "patch-sidebar-nav.py").read_text(encoding="utf-8")
+        self.assertIn('{"text":"Anima2.9B","link":"/lora/anima-2.9b.md"}', src)
+        self.assertIn(
+            '{"text":"Anima2.9B Finetune","link":"/lora/anima-2.9b-finetune.md"}',
+            src,
+        )
+
     def test_app_js_registers_split_routes_and_sidebar(self):
         app = APP_JS.read_text(encoding="utf-8")
         self.assertIn('"v-anima-29b"', app)

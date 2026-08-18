@@ -47,17 +47,21 @@ def get_old_sidebar_from_file() -> str:
     raise RuntimeError("sidebar not found")
 
 
+# Canonical hydrated sidebar. Keep Anima2.9B / Anima2.9B Finetune here —
+# re-running this script replaces the whole sidebar JSON in app.js.
 NEW_SIDEBAR_JSON = (
     '[{"text":"Next Story Trainer","link":"/"},'
     '{"text":"训练","children":['
     '{"text":"LoRA 训练","link":"/lora/index.md","collapsible":false,"children":['
     '{"text":"Anima LoRA","link":"/lora/sd3.md","collapsible":false,"children":['
     '{"text":"标准模式","link":"/lora/sd3.md"},'
-    '{"text":"Fast 模式","link":"/lora/anima-fast.md"}]},'
+    '{"text":"Fast 模式","link":"/lora/anima-fast.md"},'
+    '{"text":"Anima2.9B","link":"/lora/anima-2.9b.md"}]},'
     '{"text":"Flux","link":"/lora/flux.md"},'
     '{"text":"Stable Diffusion","link":"/lora/master.md"}]},'
     '{"text":"\\u5168\\u91cf\\u5fae\\u8c03","link":"/lora/anima-finetune.md","collapsible":false,"children":['
     '{"text":"Anima Finetune","link":"/lora/anima-finetune.md"},'
+    '{"text":"Anima2.9B Finetune","link":"/lora/anima-2.9b-finetune.md"},'
     '{"text":"Stable Diffusion","link":"/dreambooth/index.md"}]}]},'
     '{"text":"工具与调试","children":['
     '{"text":"Tensorboard","link":"/tensorboard.md"},'
