@@ -85,7 +85,7 @@ def test_estimate_cache_and_multires_inflate_dataset_volume():
     assert cached.cache_bytes > 0
     assert cached.breakdown["multires_tiers"] == 2
     assert cached.breakdown["latents_cache_bytes"] > 0
-    assert cached.breakdown["text_encoder_cache_bytes"] == 10 * 8 * MiB
+    assert cached.breakdown["text_encoder_cache_bytes"] == 10 * 2 * MiB
 
 
 def test_check_passes_when_free_space_is_enough(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -100,6 +100,8 @@ def test_check_passes_when_free_space_is_enough(tmp_path: Path, monkeypatch: pyt
         "mikazuki.disk_preflight.shutil.disk_usage",
         lambda _path: SimpleNamespace(total=100 * GiB, used=0, free=50 * GiB),
     )
+    monkeypatch.setenv("MIKAZUKI_TRAINER_SETTINGS", str(tmp_path / "missing.json"))
+    monkeypatch.delenv(SKIP_ENV, raising=False)
     need = check_training_disk_space(
         {
             "output_dir": str(out),
@@ -125,6 +127,8 @@ def test_check_raises_when_output_volume_is_short(tmp_path: Path, monkeypatch: p
         "mikazuki.disk_preflight.shutil.disk_usage",
         lambda _path: SimpleNamespace(total=10 * GiB, used=9 * GiB, free=200 * MiB),
     )
+    monkeypatch.setenv("MIKAZUKI_TRAINER_SETTINGS", str(tmp_path / "missing.json"))
+    monkeypatch.delenv(SKIP_ENV, raising=False)
     with pytest.raises(DiskSpaceError) as ctx:
         check_training_disk_space(
             {
@@ -159,6 +163,105 @@ def test_skip_env_bypasses_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         autosave_dir=str(tmp_path),
     )
     assert result.output_bytes == 0
+
+
+def test_typical_anima_lora_fits_on_3gb_free(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Regression: stacked 2 GiB reserves used to reject this as ~4.4 GB."""
+    out = tmp_path / "out"
+    out.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "1_class").mkdir()
+    (data / "1_class" / "a.png").write_bytes(b"x")
+
+    monkeypatch.setattr(
+        "mikazuki.disk_preflight.shutil.disk_usage",
+        lambda _path: SimpleNamespace(total=20 * GiB, used=17 * GiB, free=3 * GiB),
+    )
+    monkeypatch.delenv(SKIP_ENV, raising=False)
+    monkeypatch.setenv("MIKAZUKI_TRAINER_SETTINGS", str(tmp_path / "missing.json"))
+    need = check_training_disk_space(
+        {
+            "output_dir": str(out),
+            "train_data_dir": str(data),
+            "network_dim": 16,
+            "max_train_epochs": 10,
+            "save_every_n_epochs": 2,
+            "cache_latents_to_disk": True,
+            "cache_text_encoder_outputs_to_disk": False,
+            "freeze_inserted_only_training": True,
+            "resolution": "1024,1024",
+        },
+        "anima-2.9b",
+        image_count=40,
+        autosave_dir=str(tmp_path / "autosave"),
+    )
+    scaled = need.output_bytes + need.cache_bytes
+    assert scaled < 2 * GiB
+    assert need.breakdown["checkpoint_count"] <= 6
+
+
+def test_unset_save_every_does_not_assume_every_epoch():
+    need = estimate_training_disk_need(
+        {"network_dim": 16, "max_train_epochs": 10, "resolution": "1024,1024"},
+        "anima-2.9b",
+        image_count=10,
+    )
+    assert need.breakdown["checkpoint_count"] == 1
+
+
+def test_trainer_settings_can_skip_preflight(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from mikazuki.trainer_settings import save_trainer_settings
+
+    settings_file = tmp_path / "trainer_settings.json"
+    monkeypatch.setenv("MIKAZUKI_TRAINER_SETTINGS", str(settings_file))
+    monkeypatch.delenv(SKIP_ENV, raising=False)
+    save_trainer_settings({"disk_preflight_enabled": False})
+    monkeypatch.setattr(
+        "mikazuki.disk_preflight.shutil.disk_usage",
+        lambda _path: (_ for _ in ()).throw(AssertionError("disk_usage should not run")),
+    )
+    result = check_training_disk_space(
+        {"output_dir": str(tmp_path), "network_dim": 64, "max_train_epochs": 99},
+        "anima-lora",
+        image_count=1000,
+        autosave_dir=str(tmp_path),
+    )
+    assert result.output_bytes == 0
+
+
+def test_cache_on_separate_volume_is_checked_apart_from_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setenv("MIKAZUKI_TRAINER_SETTINGS", str(tmp_path / "missing.json"))
+    monkeypatch.delenv(SKIP_ENV, raising=False)
+    monkeypatch.setattr("mikazuki.disk_preflight.same_volume", lambda _a, _b: False)
+    seen: list[str] = []
+
+    def fake_usage(path):
+        seen.append(str(path))
+        return SimpleNamespace(total=100 * GiB, used=0, free=50 * GiB)
+
+    monkeypatch.setattr("mikazuki.disk_preflight.shutil.disk_usage", fake_usage)
+    check_training_disk_space(
+        {
+            "output_dir": str(out),
+            "train_data_dir": str(data),
+            "network_dim": 16,
+            "max_train_epochs": 1,
+            "save_every_n_epochs": 1,
+            "cache_latents_to_disk": True,
+            "resolution": "1024,1024",
+        },
+        "anima-lora",
+        image_count=20,
+        autosave_dir=str(tmp_path / "autosave"),
+    )
+    blob = " ".join(seen)
+    assert str(out) in blob or str(out.resolve()) in blob
+    assert str(data) in blob or str(data.resolve()) in blob
 
 
 class SubmitDiskPreflightTests(unittest.TestCase):

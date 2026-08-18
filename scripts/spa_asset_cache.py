@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 # Bump this whenever frontend/dist assets are patched in place (same filename hash).
-SPA_ASSET_CACHE_KEY = "20260815-v2.9.8-release"
+SPA_ASSET_CACHE_KEY = "20260817-v2.9.8-trainer-settings"
 
 # Previous keys replaced by scripts/bump_spa_asset_cache_key.py when bumping.
 LEGACY_SPA_ASSET_CACHE_KEYS = (
+    "20260815-v2.9.8-release",
     "20260815-v2.9.9-29b-title",
     "20260815-v2.9.9-29b-split",
     "20260815-v2.9.9-29b-routes",
@@ -52,4 +53,6 @@ LEGACY_SPA_ASSET_CACHE_KEYS = (
 IN_PLACE_PATCHED_DIST_ASSETS = (
     "/assets/app.547295de.js",
     "/assets/layout.96d49288.js",
+    "/assets/settings.html.06993f96.js",
+    "/assets/settings.html.07aaabcc.js",
 )

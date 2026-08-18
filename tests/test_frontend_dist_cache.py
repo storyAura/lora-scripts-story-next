@@ -63,6 +63,8 @@ class TestSpaAssetCache(unittest.TestCase):
         source = (ROOT / "mikazuki/app/application.py").read_text(encoding="utf-8")
         self.assertIn("/assets/layout.96d49288.js", source)
         self.assertIn("/assets/app.547295de.js", source)
+        self.assertIn("/assets/settings.html.06993f96.js", source)
+        self.assertIn("/assets/settings.html.07aaabcc.js", source)
         self.assertIn("no-cache, must-revalidate", source)
 
 

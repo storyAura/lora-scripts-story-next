@@ -28,6 +28,8 @@ mimetypes.add_type("text/css", ".css")
 _IN_PLACE_PATCHED_DIST_ASSETS = frozenset({
     "/assets/app.547295de.js",
     "/assets/layout.96d49288.js",
+    "/assets/settings.html.06993f96.js",
+    "/assets/settings.html.07aaabcc.js",
 })
 
 
@@ -171,6 +173,7 @@ async def add_cache_control_header(request, call_next):
         or path.endswith("/assets/sd-trainer-brand.js")
         or path.endswith("/assets/sd-trainer-queue.js")
         or path.endswith("/assets/sd-trainer-infer.js")
+        or path.endswith("/assets/sd-trainer-settings.js")
         or path.endswith("/assets/dataset-editor.js")
         or path.endswith("/assets/dataset-editor.css")
         or path.endswith("/assets/dataset-editor-entry.js")

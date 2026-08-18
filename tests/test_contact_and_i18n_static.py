@@ -32,6 +32,7 @@ class ContactAndI18nStaticTests(unittest.TestCase):
         self.assertIn("sd-schema-i18n-en.json", nav)
         self.assertIn("sd-chrome-i18n-en.json", nav)
         self.assertIn("sd-help-i18n-en.json", nav)
+        self.assertIn('"训练器设置": "Trainer Settings"', nav)
         self.assertIn('"训练 UI 设置": "Training UI Settings"', nav)
         self.assertIn("syncHelpIframeLocale", nav)
         self.assertIn("main.page .theme-default-content", nav)
@@ -112,8 +113,9 @@ class ContactAndI18nStaticTests(unittest.TestCase):
         help_dict = json.loads(HELP_DICT.read_text(encoding="utf-8"))
         self.assertGreaterEqual(len(schema), 407)
         self.assertTrue(all(str(v).strip() for v in schema.values()))
+        self.assertIn("训练器设置", chrome)
         self.assertIn("训练 UI 设置", chrome)
-        self.assertIn("不懂的不要碰这个", chrome)
+        self.assertIn("开关会写入本机 config/trainer_settings.json，影响所有训练任务", chrome)
         self.assertGreaterEqual(len(help_dict), 100)
         if SCHEMA_SRC.is_file():
             src = json.loads(SCHEMA_SRC.read_text(encoding="utf-8"))

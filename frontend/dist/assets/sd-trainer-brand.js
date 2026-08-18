@@ -795,3 +795,13 @@
   s.defer = true;
   document.head.appendChild(s);
 })();
+
+/** Trainer-settings sync - sd-trainer-settings.js is served no-cache like this file. */
+(function () {
+  if (document.getElementById('sd-trainer-settings-script')) return;
+  var s = document.createElement('script');
+  s.id = 'sd-trainer-settings-script';
+  s.src = '/assets/sd-trainer-settings.js';
+  s.defer = true;
+  document.head.appendChild(s);
+})();

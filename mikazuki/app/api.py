@@ -80,6 +80,11 @@ from mikazuki.training_validation import (
     validate_training_configuration,
 )
 from mikazuki.disk_preflight import DiskSpaceError, check_training_disk_space
+from mikazuki.trainer_settings import (
+    apply_trainer_settings_to_config,
+    load_trainer_settings,
+    save_trainer_settings,
+)
 from mikazuki.optimizer_configuration import (
     OptimizerConfigurationError,
     normalize_optimizer_configuration,
@@ -683,6 +688,23 @@ async def normalize_export_config(request: Request):
     return APIResponseSuccess(data={"config": cfg, "warnings": warnings})
 
 
+@router.get("/trainer-settings")
+async def get_trainer_settings():
+    return APIResponseSuccess(data=load_trainer_settings())
+
+
+@router.put("/trainer-settings")
+async def put_trainer_settings(request: Request):
+    try:
+        payload = json.loads(await request.body() or b"{}")
+    except json.JSONDecodeError:
+        return APIResponseFail(message="请求体必须是 JSON")
+    if not isinstance(payload, dict):
+        return APIResponseFail(message="请求体必须是对象")
+    saved = save_trainer_settings(payload)
+    return APIResponseSuccess(message="训练器设置已保存", data=saved)
+
+
 @router.post("/run")
 async def create_toml_file(request: Request):
     json_data = await request.body()
@@ -696,6 +718,7 @@ async def create_toml_file(request: Request):
 
 async def submit_training_config(config: dict):
     """Full /api/run pipeline from a raw GUI config dict (also the queue runner's launch path)."""
+    apply_trainer_settings_to_config(config)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     autosave_dir = os.path.join(os.getcwd(), "config", "autosave")
     os.makedirs(autosave_dir, exist_ok=True)

@@ -54,6 +54,7 @@
     其他: "More",
     "UI 设置": "UI Settings",
     "训练 UI 设置": "Training UI Settings",
+    "训练器设置": "Trainer Settings",
     关于: "About",
     反馈: "Feedback",
     联系方式: "Contact",

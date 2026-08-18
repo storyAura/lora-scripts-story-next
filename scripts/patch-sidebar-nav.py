@@ -68,7 +68,7 @@ NEW_SIDEBAR_JSON = (
     '{"text":"新手上路","link":"/help/guide.md"},'
     '{"text":"训练参数说明","link":"/lora/params.md"}]},'
     '{"text":"其他","collapsible":false,"children":['
-    '{"text":"UI 设置","link":"/other/settings.md"},'
+    '{"text":"训练器设置","link":"/other/settings.md"},'
     '{"text":"关于","link":"/other/about.md"},'
     '{"text":"更新日志","link":"/other/changelog.md"}]}]'
 )
@@ -179,7 +179,7 @@ def build_sidebar_html(rel_path: str) -> str:
     other_block = (
         group_heading("其他", other_expanded)
         + "<!--[-->"
-        + item("/other/settings.md", "UI 设置", "UI 设置", active("/other/settings.md"))
+        + item("/other/settings.md", "训练器设置", "训练器设置", active("/other/settings.md"))
         + item("/other/about.md", "关于", "关于", active("/other/about.md"))
         + item("/other/changelog.md", "更新日志", "更新日志", active("/other/changelog.md"))
         + "<!--]--></ul></li>"

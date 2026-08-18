@@ -3,6 +3,14 @@
 本文件记录 **storyAura/lora-scripts-story-next** 的发行说明（v2.9.0 及更早条目沿袭上游 wochenlong/lora-scripts-next）；kohya-ss/sd-scripts 的变更请见其仓库。
 
 ---
+## Unreleased
+
+### 磁盘预检 / 训练器设置
+
+- **修正开训前磁盘估算**：原先给每个费用桶各加 2 GB 预留，且 Linux 上把所有路径当成同一块盘，典型 Anima LoRA 会被误判为需要约 4.4 GB。现按本次任务的权重与缓存估算，每块盘只加一次余量。
+- 侧栏 **UI 设置** 改名为 **训练器设置**：可开关「开训前检查磁盘空间」，并保存 Hugging Face Token / Hub 上传相关项（写入 `config/trainer_settings.json`）。环境变量 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` 仍可紧急跳过。
+
+---
 ## v2.9.8 — 2026-08-15
 
 ### Anima 2.9B

@@ -124,6 +124,12 @@ def build_accelerate_train_command(
 
     customize_env = os.environ.copy()
     customize_env.update(train_env_overrides())
+    try:
+        from mikazuki.trainer_settings import huggingface_env_overrides
+
+        customize_env.update(huggingface_env_overrides())
+    except Exception:
+        pass
     # The training subprocess runs ``python mikazuki/accelerate_launch.py``,
     # whose entry imports ``mikazuki.china_hub``. Launching by script path puts
     # only the script's own directory (``mikazuki/``) on sys.path, not the
