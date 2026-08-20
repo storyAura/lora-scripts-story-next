@@ -348,13 +348,27 @@ function renderTrainParams(status) {
   var stepsHero = params.find(function(p) { return p.label === '总步数' || p.label === '设定总步数' || p.label === '每 Epoch'; });
   var stepsHtml = '';
   if (stepsHero) {
-    var parts = escapeHtml(stepsHero.value).match(/^(\d+)(.*)/);
-    var mainVal = parts ? parts[1] : escapeHtml(stepsHero.value);
-    var detail = parts && parts[2] ? parts[2].replace(/^[（(]\s*/, '').replace(/\s*[)）]$/, '') : '';
+    var rawVal = String(stepsHero.value ?? "");
+    var parts = rawVal.match(/^(\d+)(.*)/);
+    var mainVal = escapeHtml(parts ? parts[1] : rawVal);
+    var leftover = parts && parts[2] ? parts[2].replace(/^[（(]\s*/, '').replace(/\s*[)）]$/, '') : '';
+    var source = stepsHero.source || leftover;
+    var extras = [];
+    if (source) extras.push('<div class="sh-detail">' + escapeHtml(source) + '</div>');
+    if (stepsHero.bucket_count) {
+      extras.push('<div class="sh-arb">ARB ' + escapeHtml(String(stepsHero.bucket_count)) + ' 桶</div>');
+    }
+    if (stepsHero.naive_total_steps) {
+      extras.push('<div class="sh-theory">理论 ' + escapeHtml(String(stepsHero.naive_total_steps)) + '</div>');
+    }
+    if (stepsHero.formula) {
+      extras.push('<div class="sh-formula">' + escapeHtml(stepsHero.formula_label || '⌈(图×重复) / BS⌉ × Epochs') + '</div>');
+      extras.push('<div class="sh-formula-expr">' + escapeHtml(stepsHero.formula) + '</div>');
+    }
     stepsHtml = '<div class="param-card"><div class="steps-hero">'
       + '<div class="sh-label">' + escapeHtml(stepsHero.label) + '</div>'
       + '<div class="sh-value">' + mainVal + '</div>'
-      + (detail ? '<div class="sh-detail">' + detail + '</div>' : '')
+      + extras.join('')
       + '</div></div>';
   } else {
     stepsHtml = '<div class="param-card"><div class="steps-hero"><div class="sh-label">总步数</div><div class="sh-value">-</div></div></div>';

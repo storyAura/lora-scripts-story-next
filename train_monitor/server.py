@@ -617,21 +617,36 @@ def enrich_metrics_from_tensorboard(
 
 _TOML_STR_KEYS = ("output_dir", "output_name", "optimizer_type", "lr_scheduler",
                    "network_module", "network_args", "train_data_dir", "source_image_dir", "reg_data_dir",
-                   "resolution", "mixed_precision", "model_train_type", "logging_dir")
+                   "resolution", "mixed_precision", "model_train_type", "logging_dir",
+                   "lora_type", "lycoris_algo")
 _TOML_NUM_KEYS = ("max_train_epochs", "max_train_steps", "learning_rate", "unet_lr",
                    "text_encoder_lr", "network_dim", "network_alpha", "train_batch_size",
                    "gradient_accumulation_steps", "save_every_n_epochs", "save_every_n_steps",
-                   "noise_offset", "clip_skip", "seed", "lr_warmup_steps")
+                   "noise_offset", "clip_skip", "seed", "lr_warmup_steps",
+                   "min_bucket_reso", "max_bucket_reso", "bucket_reso_steps")
 _TOML_BOOL_KEYS = ("gradient_checkpointing", "full_bf16", "full_fp16",
-                   "network_train_unet_only")
+                   "network_train_unet_only", "enable_bucket")
 
 
 def parse_training_config_text(text: str, config_path: Path | str | None = None) -> dict:
     config: dict[str, str] = {}
     for key in _TOML_STR_KEYS:
+        if key == "network_args":
+            continue
         match = re.search(rf'^{key}\s*=\s*["\'](?P<value>.*?)["\']\s*$', text, flags=re.MULTILINE)
         if match:
             config[key] = match.group("value")
+    args_match = re.search(
+        r"^network_args\s*=\s*\[(?P<body>.*?)\]",
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if args_match:
+        config["network_args"] = re.sub(r"\s+", " ", args_match.group("body")).strip()
+    else:
+        match = re.search(r'^network_args\s*=\s*["\'](?P<value>.*?)["\']\s*$', text, flags=re.MULTILINE)
+        if match:
+            config["network_args"] = match.group("value")
     for key in _TOML_NUM_KEYS:
         match = re.search(rf'^{key}\s*=\s*(?P<value>[0-9.eE+-]+)\s*$', text, flags=re.MULTILINE)
         if match:
@@ -716,6 +731,38 @@ def _runtime_total_steps(runtime_metrics: dict | None) -> int:
     except (TypeError, ValueError):
         return 0
     return total_steps if total_steps > 0 else 0
+
+
+def _log_buckets_from_metrics(runtime_metrics: dict | None) -> list[dict]:
+    if not isinstance(runtime_metrics, dict):
+        return []
+    raw = runtime_metrics.get("arb_buckets")
+    if not isinstance(raw, list):
+        return []
+    buckets: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            count = int(item.get("count", 0))
+        except (TypeError, ValueError):
+            continue
+        if count <= 0:
+            continue
+        buckets.append(item)
+    return buckets
+
+
+def _naive_step_formula(samples: int, bs: int, ga: int, epochs: int) -> tuple[str, str]:
+    if ga <= 1:
+        return (
+            "⌈(图×重复) / BS⌉ × Epochs",
+            f"⌈{samples} / {bs}⌉ × {epochs}",
+        )
+    return (
+        "⌈⌈(图×重复) / BS⌉ / GA⌉ × Epochs",
+        f"⌈⌈{samples} / {bs}⌉ / {ga}⌉ × {epochs}",
+    )
 
 
 def infer_training_engine(config: dict, active_task: dict | None = None) -> str:
@@ -843,6 +890,7 @@ def _estimate_bucket_batches(subsets: list[dict], base_dir: Path, bs: int, confi
 
 def estimate_training_steps(config: dict, engine: str = "kohya", runtime_metrics: dict | None = None) -> dict:
     runtime_total = _runtime_total_steps(runtime_metrics)
+    log_buckets = _log_buckets_from_metrics(runtime_metrics)
     train_data_dir = config.get("train_data_dir") or config.get("source_image_dir") or ""
     estimate: dict = {
         "engine": engine,
@@ -852,26 +900,33 @@ def estimate_training_steps(config: dict, engine: str = "kohya", runtime_metrics
         "detail": "trainer runtime progress" if runtime_total else "",
         "runtime_total": bool(runtime_total),
     }
-    if not train_data_dir:
-        return estimate
 
-    resolved = resolve_repo_path(train_data_dir)
-    reg_dir = config.get("reg_data_dir", "")
-    resolved_reg = resolve_repo_path(reg_dir) if reg_dir else None
-    require_repeat_prefix = engine == "kohya"
-    train_scan = _scan_repeat_subsets(str(resolved) if resolved else train_data_dir, require_repeat_prefix=require_repeat_prefix)
-    train_total = int(train_scan["repeated"])
-    train_raw = int(train_scan["raw"])
+    train_scan = {"raw": 0, "repeated": 0, "subsets": []}
+    train_total = 0
+    train_raw = 0
     reg_total = 0
     reg_raw = 0
-    if resolved_reg or reg_dir:
-        reg_scan = _scan_repeat_subsets(str(resolved_reg) if resolved_reg else reg_dir, require_repeat_prefix=require_repeat_prefix)
-        reg_total_raw = int(reg_scan["repeated"])
-        reg_raw = int(reg_scan["raw"])
-        if reg_raw:
-            reg_total = max(reg_total_raw, train_total)
+    resolved = None
+    if train_data_dir:
+        resolved = resolve_repo_path(train_data_dir)
+        reg_dir = config.get("reg_data_dir", "")
+        resolved_reg = resolve_repo_path(reg_dir) if reg_dir else None
+        require_repeat_prefix = engine == "kohya"
+        train_scan = _scan_repeat_subsets(str(resolved) if resolved else train_data_dir, require_repeat_prefix=require_repeat_prefix)
+        train_total = int(train_scan["repeated"])
+        train_raw = int(train_scan["raw"])
+        if resolved_reg or reg_dir:
+            reg_scan = _scan_repeat_subsets(str(resolved_reg) if resolved_reg else reg_dir, require_repeat_prefix=require_repeat_prefix)
+            reg_total_raw = int(reg_scan["repeated"])
+            reg_raw = int(reg_scan["raw"])
+            if reg_raw:
+                reg_total = max(reg_total_raw, train_total)
 
     samples = train_total + reg_total
+    if samples <= 0 and log_buckets:
+        samples = sum(int(item["count"]) for item in log_buckets)
+        train_raw = samples
+        train_total = samples
     estimate.update({
         "train_images": train_raw,
         "train_images_repeated": train_total,
@@ -890,9 +945,17 @@ def estimate_training_steps(config: dict, engine: str = "kohya", runtime_metrics
     bucket_est = None
     bucket_note = ""
     # ARB 桶：每个纵横比桶单独凑批、逐桶取整，实际步数 ≥ 简单估算
-    if str(config.get("enable_bucket", "")).strip().lower() in ("true", "1") and not reg_raw:
-        base = resolved if resolved else Path(train_data_dir)
-        bucket_est = _estimate_bucket_batches(train_scan["subsets"], Path(base), bs, config)
+    if log_buckets:
+        bucket_est = {
+            "batches": sum(math.ceil(int(item["count"]) / bs) for item in log_buckets),
+            "buckets": len(log_buckets),
+        }
+        batches_per_epoch = bucket_est["batches"]
+        bucket_note = f"ARB {bucket_est['buckets']}桶"
+    elif str(config.get("enable_bucket", "")).strip().lower() in ("true", "1") and not reg_raw:
+        base = resolved if resolved else Path(train_data_dir) if train_data_dir else None
+        if base is not None:
+            bucket_est = _estimate_bucket_batches(train_scan["subsets"], Path(base), bs, config)
         if bucket_est:
             batches_per_epoch = bucket_est["batches"]
             bucket_note = f"ARB {bucket_est['buckets']}桶"
@@ -924,17 +987,52 @@ def estimate_training_steps(config: dict, engine: str = "kohya", runtime_metrics
     if epochs_str:
         epochs = _positive_int(epochs_str)
         estimate["epochs"] = epochs
+        estimate["naive_total_steps"] = epochs * naive_steps_per_epoch
+        formula_label, formula = _naive_step_formula(samples, bs, ga, epochs)
+        estimate["formula_label"] = formula_label
+        estimate["formula"] = formula
         if not runtime_total:
             estimate["total_steps"] = epochs * steps_per_epoch
         if bucket_est:
-            estimate["naive_total_steps"] = epochs * naive_steps_per_epoch
+            estimate["arb_total_steps"] = epochs * steps_per_epoch
             estimate["bucket_compare"] = (
                 f"理论{epochs * naive_steps_per_epoch} → 实际{epochs * steps_per_epoch}"
             )
+        if runtime_total:
+            estimate["arb_total_steps"] = runtime_total
+            if bucket_est:
+                estimate["bucket_compare"] = (
+                    f"理论{epochs * naive_steps_per_epoch} → 实际{runtime_total}"
+                )
     elif steps_str and not runtime_total:
         estimate["total_steps"] = _positive_int(steps_str)
         estimate["manual_steps"] = True
     return estimate
+
+
+def _step_card_from_estimate(step_estimate: dict, *, label: str, value: object, source: str = "") -> dict:
+    """Structured 总步数 card: big number + ARB / naive formula extras for the UI."""
+    card: dict = {"label": label, "value": str(value)}
+    if source:
+        card["source"] = source
+    bucket_count = step_estimate.get("bucket_count")
+    if bucket_count:
+        card["bucket_count"] = bucket_count
+    naive_total = step_estimate.get("naive_total_steps")
+    if naive_total:
+        card["naive_total_steps"] = naive_total
+    arb_total = step_estimate.get("arb_total_steps")
+    if arb_total:
+        card["arb_total_steps"] = arb_total
+    formula = step_estimate.get("formula")
+    if formula:
+        card["formula"] = formula
+        card["formula_label"] = step_estimate.get("formula_label") or "⌈(图×重复) / BS⌉ × Epochs"
+    compare = step_estimate.get("bucket_compare")
+    if compare:
+        card["bucket_compare"] = compare
+    return card
+
 
 def _extract_train_params(config: dict, engine: str | None = None, runtime_metrics: dict | None = None) -> list[dict]:
     """Build ordered list of key training hyperparameters for the monitor UI."""
@@ -957,28 +1055,37 @@ def _extract_train_params(config: dict, engine: str | None = None, runtime_metri
     engine = engine or infer_training_engine(config)
     step_estimate = estimate_training_steps(config, engine=engine, runtime_metrics=runtime_metrics)
     step_label = "总步数"
+    step_card: dict | None = None
     if step_estimate.get("runtime_total") and step_estimate.get("total_steps"):
-        # 训练器实时接管后仍显示分桶信息:理论 = 不分桶估算,实际 = 训练器真实总步数
-        value = f"{step_estimate['total_steps']}（训练器实时"
-        if step_estimate.get("bucket_count") and step_estimate.get("naive_total_steps"):
-            value += (
-                f" · ARB {step_estimate['bucket_count']}桶"
-                f" · 理论{step_estimate['naive_total_steps']} → 实际{step_estimate['total_steps']}"
-            )
-        params.append({"label": step_label, "value": value + "）"})
+        step_card = _step_card_from_estimate(
+            step_estimate,
+            label=step_label,
+            value=step_estimate["total_steps"],
+            source="训练器实时",
+        )
     elif step_estimate.get("total_steps") and step_estimate.get("epochs"):
-        compare = step_estimate.get("bucket_compare", "")
-        value = f"{step_estimate['total_steps']}（{step_estimate.get('detail', '')} × {step_estimate['epochs']}ep"
-        if compare:
-            value += f" · {compare}"
-        params.append({"label": step_label, "value": value + "）"})
+        step_card = _step_card_from_estimate(
+            step_estimate,
+            label=step_label,
+            value=step_estimate["total_steps"],
+            source="",
+        )
     elif step_estimate.get("total_steps") and step_estimate.get("manual_steps"):
-        params.append({"label": step_label, "value": f"{step_estimate['total_steps']}（手动设定）"})
+        step_card = _step_card_from_estimate(
+            step_estimate,
+            label=step_label,
+            value=step_estimate["total_steps"],
+            source="手动设定",
+        )
     elif step_estimate.get("steps_per_epoch"):
-        params.append({
-            "label": "每 Epoch",
-            "value": f"{step_estimate['steps_per_epoch']} 步（{step_estimate.get('detail', '')}）",
-        })
+        step_card = _step_card_from_estimate(
+            step_estimate,
+            label="每 Epoch",
+            value=step_estimate["steps_per_epoch"],
+            source=str(step_estimate.get("detail") or ""),
+        )
+    if step_card:
+        params.append(step_card)
 
     if config.get("network_train_unet_only") == "true":
         # only-DiT training: the DiT lr is the effective one; global/TE lr are inert
@@ -1145,6 +1252,53 @@ _ADAPTER_MARKERS: list[tuple[tuple[str, ...], str]] = [
     (('"moslora"', "mosloramodule"), "MoSLoRA"),
 ]
 
+_LORA_TYPE_DISPLAY = {
+    "lora": "LoRA",
+    "rslora": "rsLoRA",
+    "lora_plus": "LoRA+",
+    "dora": "DoRA",
+    "lora_fa": "LoRA-FA",
+    "vera": "VeRA",
+    "delora": "DeLoRA",
+    "waveft": "WaveFT",
+    "deft": "DEFT",
+    "moslora": "MoSLoRA",
+    "tlora": "T-LoRA",
+    "loha": "LoHa",
+    "lokr": "LoKr",
+    "cdka": "CDKA",
+    "bokr": "BoKR",
+    "bora": "BoRA",
+    "gsokr": "GSoKR",
+    "glora_boft": "GLoRA-BOFT",
+    "glokr": "GLoKR",
+}
+
+# Unambiguous modules only — lycoris.kohya is shared by LoKr / BoKR / rsLoRA / …
+_NETWORK_MODULE_DISPLAY = {
+    "networks.tlora_anima": "T-LoRA",
+    "networks.lora_fa_anima": "LoRA-FA",
+    "networks.vera_anima": "VeRA",
+    "networks.delora_anima": "DeLoRA",
+    "networks.waveft_anima": "WaveFT",
+    "networks.deft_anima": "DEFT",
+    "networks.moslora_anima": "MoSLoRA",
+    "networks.cdka_anima": "CDKA",
+    "networks.loha": "LoHa",
+    "networks.lora_anima": "LoRA",
+}
+
+_ANIMA_LORA_TRAIN_TYPES = {
+    "anima-lora",
+    "anima-lora-fast",
+    "sd3-lora",
+    "anima-2.9b",
+}
+_ANIMA_FINETUNE_TRAIN_TYPES = {
+    "anima-finetune",
+    "anima-2.9b-finetune",
+}
+
 
 def _infer_adapter_type(source: str) -> str:
     for markers, display in _ADAPTER_MARKERS:
@@ -1155,38 +1309,96 @@ def _infer_adapter_type(source: str) -> str:
     return "LoRA"
 
 
-def infer_model_type(lines: list[str]) -> str:
+def _network_args_text(config: dict) -> str:
+    raw = config.get("network_args")
+    if isinstance(raw, list):
+        return " ".join(str(item) for item in raw)
+    return str(raw or "")
+
+
+def _adapter_from_config(config: dict | None) -> str | None:
+    if not config:
+        return None
+    lora_type = str(config.get("lora_type") or "").strip().lower()
+    if lora_type in _LORA_TYPE_DISPLAY:
+        return _LORA_TYPE_DISPLAY[lora_type]
+    algo = str(config.get("lycoris_algo") or "").strip().lower()
+    if algo in _LORA_TYPE_DISPLAY:
+        return _LORA_TYPE_DISPLAY[algo]
+    args_text = _network_args_text(config)
+    algo_match = re.search(r"algo\s*=\s*([A-Za-z0-9_]+)", args_text, flags=re.I)
+    if algo_match:
+        mapped = _LORA_TYPE_DISPLAY.get(algo_match.group(1).strip().lower())
+        if mapped:
+            return mapped
+    module = str(config.get("network_module") or "").strip().lower()
+    return _NETWORK_MODULE_DISPLAY.get(module)
+
+
+def _latest_autosave_for_model_type() -> tuple[dict, str]:
+    autosave_dir = REPO / "config/autosave"
+    if not autosave_dir.exists():
+        return {}, ""
+    autosaves = sorted(autosave_dir.glob("*.toml"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not autosaves:
+        return {}, ""
+    try:
+        text = autosaves[0].read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}, ""
+    return parse_training_config_text(text, autosaves[0]), text
+
+
+def infer_model_type(lines: list[str], config: dict | None = None) -> str:
+    """Prefer the active task's lora_type; do not let leftover tlora_anima win.
+
+    Switching T-LoRA → LoKr leaves `network_module = networks.tlora_anima` on the
+    form. The adapter corrects it and prints a compatibility warning that still
+    contains `tlora_anima`; scanning that blob first used to keep showing T-LoRA.
+    """
     text = "\n".join(lines[-1000:]).lower()
-    config_text = ""
-    autosaves = sorted((REPO / "config/autosave").glob("*.toml"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if autosaves:
-        try:
-            config_text = autosaves[0].read_text(encoding="utf-8", errors="replace").lower()
-        except OSError:
-            config_text = ""
-    source = text + "\n" + config_text
-    adapter = _infer_adapter_type(source)
-    anima_network = "anima_train_network" in source
+    autosave_text = ""
+    if config is None:
+        parsed, autosave_text = _latest_autosave_for_model_type()
+    else:
+        parsed = {key: value for key, value in config.items() if value not in (None, "")}
+    adapter = _adapter_from_config(parsed) or _infer_adapter_type(text)
+    train_type = str(parsed.get("model_train_type") or "").strip().lower()
+    module = str(parsed.get("network_module") or "").lower()
+    haystack = "\n".join([text, autosave_text.lower(), train_type, module])
+    anima_network = (
+        train_type in _ANIMA_LORA_TRAIN_TYPES
+        or "anima_train_network" in haystack
+        or "lora_anima" in haystack
+        or "tlora_anima" in haystack
+        or "qwen3" in haystack
+    )
     anima_finetune = not anima_network and (
-        "anima-finetune" in source
-        or "anima_train.py" in source
-        or "scripts/dev/anima_train" in source
-        or "scripts\\dev\\anima_train" in source
+        train_type in _ANIMA_FINETUNE_TRAIN_TYPES
+        or "anima-finetune" in haystack
+        or "anima_train.py" in haystack
+        or "scripts/dev/anima_train" in haystack
+        or "scripts\\dev\\anima_train" in haystack
     )
     if anima_finetune:
         return "Anima Finetune"
-    if (
-        anima_network
-        or "lora_anima" in source
-        or "tlora_anima" in source
-        or "qwen3" in source
-    ):
+    if anima_network:
         return f"Anima {adapter}"
-    if "flux_train_network" in source or "flux-lora" in source or "t5xxl" in source:
+    if (
+        train_type in {"flux-lora", "flux-finetune"}
+        or "flux_train_network" in haystack
+        or "flux-lora" in haystack
+        or "t5xxl" in haystack
+    ):
         return f"Flux {adapter}"
-    if "sdxl_train_network" in source or "sdxl-lora" in source or "v_prediction" in source:
+    if (
+        train_type in {"sdxl-lora", "sdxl-finetune"}
+        or "sdxl_train_network" in haystack
+        or "sdxl-lora" in haystack
+        or "v_prediction" in haystack
+    ):
         return f"SDXL {adapter}"
-    if "train_network.py" in source:
+    if "train_network.py" in haystack or train_type in {"sd-lora"}:
         return adapter
     return "未知类型"
 
@@ -1200,6 +1412,24 @@ def parse_log(lines: list[str]) -> dict:
     joined = "\r".join(lines[-5000:])
     source = joined if "|" in joined else text
     info: dict[str, object] = {}
+
+    arb_buckets = []
+    for match in re.finditer(
+        r"bucket\s+(?P<index>\d+):\s+resolution\s+\((?P<w>\d+),\s*(?P<h>\d+)\),\s+count:\s+(?P<count>\d+)",
+        text,
+        flags=re.I,
+    ):
+        count = int(match.group("count"))
+        if count <= 0:
+            continue
+        arb_buckets.append({
+            "index": int(match.group("index")),
+            "width": int(match.group("w")),
+            "height": int(match.group("h")),
+            "count": count,
+        })
+    if arb_buckets:
+        info["arb_buckets"] = arb_buckets
 
     progress_matches = list(re.finditer(
         r"(?:^|[\r\n])steps:\s*(?P<pct>\d{1,3})%\|.*?\|\s*(?P<step>\d+)\s*/\s*(?P<total>\d+)"
@@ -1479,6 +1709,7 @@ def collect_status() -> dict:
         return status
 
     status["active_task"] = active
+    status["model_type"] = infer_model_type([], train_config)
     engine = infer_training_engine(train_config, active)
     status["train_params"] = _extract_train_params(train_config, engine=engine)
     state_map = {
@@ -1497,7 +1728,7 @@ def collect_status() -> dict:
             data = api_data(tail_payload)
             lines = data.get("lines", [])
             status["log_lines"] = lines
-            status["model_type"] = infer_model_type(lines)
+            status["model_type"] = infer_model_type(lines, train_config)
             try:
                 stdout_metrics = parse_log(lines)
                 anima_metrics = anima_fast_progress_metrics(active)

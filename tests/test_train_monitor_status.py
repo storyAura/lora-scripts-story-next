@@ -69,7 +69,7 @@ class TrainMonitorStatusTests(unittest.TestCase):
             "accelerate launch scripts/dev/anima_train.py --config_file config/autosave/foo.toml",
             "INFO dit device: cuda:0",
         ]
-        self.assertEqual(server.infer_model_type(lines), "Anima Finetune")
+        self.assertEqual(server.infer_model_type(lines, {}), "Anima Finetune")
 
     def test_infer_model_type_anima_finetune_from_config(self):
         autosave = server.REPO / "config/autosave"
@@ -85,7 +85,7 @@ class TrainMonitorStatusTests(unittest.TestCase):
 
     def test_infer_model_type_anima_lora_network(self):
         lines = ["python vendor/sd-scripts/anima_train_network.py --config_file x.toml"]
-        self.assertEqual(server.infer_model_type(lines), "Anima LoRA")
+        self.assertEqual(server.infer_model_type(lines, {}), "Anima LoRA")
 
     def test_estimate_training_steps_accounts_for_arb_buckets(self):
         # 9 张方图 + 9 张宽图,BS8:朴素估算 ceil(18/8)=3 步/轮;
@@ -125,10 +125,13 @@ class TrainMonitorStatusTests(unittest.TestCase):
             params = server._extract_train_params(
                 config, runtime_metrics={"total_steps": "660"}
             )
-            steps_value = next(p["value"] for p in params if p["label"] == "总步数")
-            self.assertIn("训练器实时", steps_value)
-            self.assertIn("ARB 2桶", steps_value)
-            self.assertIn("理论30 → 实际660", steps_value)
+            steps_card = next(p for p in params if p["label"] == "总步数")
+            self.assertEqual(steps_card["value"], "660")
+            self.assertEqual(steps_card["source"], "训练器实时")
+            self.assertEqual(steps_card["bucket_count"], 2)
+            self.assertEqual(steps_card["naive_total_steps"], 30)
+            self.assertEqual(steps_card["formula"], "⌈18 / 8⌉ × 10")
+            self.assertEqual(steps_card["formula_label"], "⌈(图×重复) / BS⌉ × Epochs")
 
     def test_infer_adapter_type_distinguishes_local_algos(self):
         # 回归：GLoKRModule 含子串 lokrmodule，曾被误报为 LoKr
@@ -149,6 +152,97 @@ class TrainMonitorStatusTests(unittest.TestCase):
         }
         for source, expected in cases.items():
             self.assertEqual(server._infer_adapter_type(source), expected, source)
+
+    def test_infer_model_type_prefers_config_lora_type_over_stale_tlora_logs(self):
+        lines = [
+            "python vendor/sd-scripts/anima_train_network.py --config_file x.toml",
+            "[Anima backend compatibility] network_module=networks.tlora_anima "
+            "与 lora_type=lokr 不符，已改为 lycoris.kohya",
+            "module type table: {'lokrmodule': 4}",
+        ]
+        config = {
+            "lora_type": "lokr",
+            "network_module": "networks.tlora_anima",
+            "model_train_type": "anima-lora",
+        }
+        self.assertEqual(server.infer_model_type(lines, config), "Anima LoKr")
+
+    def test_parse_training_config_reads_lora_type_enable_bucket_and_args(self):
+        text = "\n".join([
+            'lora_type = "lokr"',
+            'network_module = "networks.tlora_anima"',
+            "enable_bucket = true",
+            "min_bucket_reso = 256",
+            "max_bucket_reso = 1024",
+            "bucket_reso_steps = 64",
+            'network_args = [ "algo=lokr", "factor=-1",]',
+            'train_data_dir = "/data"',
+        ])
+        parsed = server.parse_training_config_text(text)
+        self.assertEqual(parsed["lora_type"], "lokr")
+        self.assertEqual(parsed["enable_bucket"], "true")
+        self.assertEqual(parsed["min_bucket_reso"], "256")
+        self.assertEqual(parsed["max_bucket_reso"], "1024")
+        self.assertEqual(parsed["bucket_reso_steps"], "64")
+        self.assertIn("algo=lokr", parsed["network_args"])
+        self.assertEqual(
+            server.infer_model_type(
+                ["python vendor/sd-scripts/anima_train_network.py"],
+                parsed,
+            ),
+            "Anima LoKr",
+        )
+
+    def test_parse_log_extracts_arb_buckets(self):
+        metrics = server.parse_log([
+            "bucket 0: resolution (1024, 1024), count: 9",
+            "bucket 1: resolution (1280, 768), count: 9",
+            "steps:   2%|▏         | 1/40 [00:01<00:20,  2.00it/s]",
+        ])
+        self.assertEqual(len(metrics["arb_buckets"]), 2)
+        self.assertEqual(metrics["arb_buckets"][0]["count"], 9)
+        self.assertEqual(metrics["total_steps"], 40)
+
+    def test_estimate_training_steps_prefers_trainer_log_buckets(self):
+        est = server.estimate_training_steps(
+            {
+                "train_batch_size": "8",
+                "max_train_epochs": "10",
+                "enable_bucket": "true",
+            },
+            runtime_metrics={
+                "arb_buckets": [
+                    {"index": 0, "width": 1024, "height": 1024, "count": 9},
+                    {"index": 1, "width": 1280, "height": 768, "count": 9},
+                ],
+                "total_steps": 40,
+            },
+        )
+        self.assertEqual(est["bucket_count"], 2)
+        self.assertEqual(est["samples_per_epoch"], 18)
+        self.assertEqual(est["naive_total_steps"], 30)
+        self.assertEqual(est["arb_total_steps"], 40)
+        self.assertEqual(est["formula"], "⌈18 / 8⌉ × 10")
+        params = server._extract_train_params(
+            {
+                "train_batch_size": "8",
+                "max_train_epochs": "10",
+                "enable_bucket": "true",
+            },
+            runtime_metrics={
+                "arb_buckets": [
+                    {"index": 0, "count": 9},
+                    {"index": 1, "count": 9},
+                ],
+                "total_steps": 40,
+            },
+        )
+        steps_card = next(item for item in params if item["label"] == "总步数")
+        self.assertEqual(steps_card["value"], "40")
+        self.assertEqual(steps_card["source"], "训练器实时")
+        self.assertEqual(steps_card["bucket_count"], 2)
+        self.assertEqual(steps_card["naive_total_steps"], 30)
+        self.assertEqual(steps_card["formula"], "⌈18 / 8⌉ × 10")
 
     def test_anima_fast_progress_jsonl_overrides_stdout_metrics(self):
         with tempfile.TemporaryDirectory() as td:
@@ -317,7 +411,7 @@ class TrainMonitorStatusTests(unittest.TestCase):
 
         step_card = params[0]
         self.assertTrue(step_card["value"].startswith("12"))
-        self.assertIn("训练器实时", step_card["value"])
+        self.assertEqual(step_card["source"], "训练器实时")
 
     def test_kohya_train_params_prefer_runtime_total_steps(self):
         # 总步数: the directory estimate cannot see aspect-ratio bucketing, so the
@@ -340,7 +434,7 @@ class TrainMonitorStatusTests(unittest.TestCase):
             )
         step_card = params[0]
         self.assertTrue(step_card["value"].startswith("3000"), step_card)
-        self.assertIn("训练器实时", step_card["value"])
+        self.assertEqual(step_card["source"], "训练器实时")
 
     def test_unet_only_shows_dit_lr_instead_of_global_lr(self):
         config = {
@@ -368,6 +462,8 @@ class TrainMonitorStatusTests(unittest.TestCase):
 
     def test_toml_bool_keys_include_unet_only_switch(self):
         self.assertIn("network_train_unet_only", server._TOML_BOOL_KEYS)
+        self.assertIn("enable_bucket", server._TOML_BOOL_KEYS)
+        self.assertIn("lora_type", server._TOML_STR_KEYS)
 
     def test_collect_status_uses_anima_fast_runtime_total_steps_for_train_params(self):
         with tempfile.TemporaryDirectory() as td:
@@ -416,7 +512,7 @@ class TrainMonitorStatusTests(unittest.TestCase):
 
         self.assertEqual(status["metrics"]["total_steps"], 12)
         self.assertTrue(status["train_params"][0]["value"].startswith("12"))
-        self.assertIn("训练器实时", status["train_params"][0]["value"])
+        self.assertEqual(status["train_params"][0]["source"], "训练器实时")
 
     def test_newest_preview_images_uses_active_task_output_dir(self):
         with tempfile.TemporaryDirectory() as td:

@@ -507,11 +507,31 @@ body.monitor-training .site-header {
   margin: var(--space-2) 0;
 }
 
-.steps-hero .sh-detail {
+.steps-hero .sh-detail,
+.steps-hero .sh-arb,
+.steps-hero .sh-theory,
+.steps-hero .sh-formula,
+.steps-hero .sh-formula-expr {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
-  line-height: 1.4;
-  max-width: 220px;
+  line-height: 1.45;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+.steps-hero .sh-arb,
+.steps-hero .sh-theory {
+  color: var(--color-text-primary);
+  font-weight: 650;
+}
+
+.steps-hero .sh-formula {
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-1);
+}
+
+.steps-hero .sh-formula-expr {
+  font-variant-numeric: tabular-nums;
 }
 
 .param-summary {
