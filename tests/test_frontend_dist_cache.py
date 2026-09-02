@@ -16,6 +16,13 @@ class TestSpaAssetCache(unittest.TestCase):
         self.assertNotEqual(SPA_ASSET_CACHE_KEY, previous_key)
         self.assertIn(previous_key, LEGACY_SPA_ASSET_CACHE_KEYS)
 
+    def test_help_algorithms_sidebar_uses_a_new_cache_key(self):
+        from scripts.spa_asset_cache import LEGACY_SPA_ASSET_CACHE_KEYS, SPA_ASSET_CACHE_KEY
+
+        previous_key = "20260818-v2.9.8-29b-sidebar"
+        self.assertNotEqual(SPA_ASSET_CACHE_KEY, previous_key)
+        self.assertIn(previous_key, LEGACY_SPA_ASSET_CACHE_KEYS)
+
     def test_fast_submit_feedback_uses_a_new_cache_key(self):
         from scripts.spa_asset_cache import LEGACY_SPA_ASSET_CACHE_KEYS, SPA_ASSET_CACHE_KEY
 

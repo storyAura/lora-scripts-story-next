@@ -15,6 +15,11 @@ ANIMA_29B_FINETUNE_TRAIN_TYPES = frozenset({"anima-2.9b-finetune"})
 ANIMA_LORA_TYPE_PAGES = ANIMA_TRAIN_TYPES | ANIMA_29B_TRAIN_TYPES
 ANIMA_FAST_TRAIN_TYPES = frozenset({"anima-lora-fast"})
 FLUX_TRAIN_TYPES = frozenset({"flux-lora", "flux-finetune"})
+KREA2_TRAIN_TYPES = frozenset({"krea2-lora"})
+KREA2_LORA_TYPE_BRANCH_CONSTS: dict[str, dict[str, str]] = {
+    "lora": {"network_module": "networks.lora_krea2"},
+    "lokr": {"network_module": "lycoris.kohya", "lycoris_algo": "lokr"},
+}
 LUMINA_TRAIN_TYPES = frozenset({"lumina-lora"})
 SDXL_TRAIN_TYPES = frozenset({"sdxl-lora", "sdxl-finetune"})
 SD_TRAIN_TYPES = frozenset({"sd-lora", "sd-dreambooth"})
@@ -86,6 +91,7 @@ MODEL_PATH_KEYS = (
     "clip_l",
     "t5xxl",
     "gemma2",
+    "text_encoder",
     "network_weights",
     "resume",
 )
@@ -118,6 +124,17 @@ SDXL_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"/sdxl/", re.I), "模型路径含 /sdxl/"),
     (re.compile(r"sdxl[-_]", re.I), "主模型路径含 sdxl"),
     (re.compile(r"noobxl|pony|illustrious", re.I), "主模型路径为常见 SDXL 模型"),
+)
+
+KREA2_CONFIG_MARKERS = frozenset({
+    "turbo_dit",
+    "sample_mu",
+})
+
+KREA2_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"/krea2/", re.I), "模型路径含 /krea2/"),
+    (re.compile(r"krea[-_]?2", re.I), "主模型路径含 krea2"),
+    (re.compile(r"qwen3[-_]?vl", re.I), "文本编码器路径含 qwen3-vl"),
 )
 
 LUMINA_PATH_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -172,6 +189,12 @@ PAGE_SPECS: dict[str, dict[str, Any]] = {
         "accepted": FLUX_TRAIN_TYPES,
         "default_train_type": "flux-lora",
     },
+    "krea2-lora": {
+        "label": "Krea2 LoRA 训练",
+        "path": "/lora/krea2.html",
+        "accepted": KREA2_TRAIN_TYPES,
+        "default_train_type": "krea2-lora",
+    },
     "lumina-lora": {
         "label": "Lumina LoRA 训练",
         "path": "/lora/lumina.html",
@@ -212,6 +235,7 @@ TRAIN_TYPE_TARGETS: dict[str, dict[str, str]] = {
     "anima-2.9b-finetune": {"path": "/lora/anima-2.9b-finetune.html", "label": "Anima2.9B Finetune"},
     "flux-lora": {"path": "/lora/flux.html", "label": "Flux LoRA 训练"},
     "flux-finetune": {"path": "/lora/flux.html", "label": "Flux 训练"},
+    "krea2-lora": {"path": "/lora/krea2.html", "label": "Krea2 LoRA 训练"},
     "lumina-lora": {"path": "/lora/lumina.html", "label": "Lumina LoRA 训练"},
     "sdxl-lora": {"path": "/lora/master.html", "label": "SDXL LoRA 训练"},
     "sdxl-finetune": {"path": "/lora/master.html", "label": "SDXL 训练"},
@@ -347,6 +371,12 @@ def analyze_train_type(config: dict) -> TrainTypeAnalysis:
             reasons=["model_train_type=anima-2.9b"],
             scores={"anima-2.9b": 100},
         )
+    if explicit in KREA2_TRAIN_TYPES:
+        return TrainTypeAnalysis(
+            train_type="krea2-lora",
+            reasons=["model_train_type=krea2-lora"],
+            scores={"krea2-lora": 100},
+        )
 
     families: list[tuple[str, int, list[str]]] = []
 
@@ -384,6 +414,14 @@ def analyze_train_type(config: dict) -> TrainTypeAnalysis:
         path_rules=FLUX_PATH_RULES,
     )
     families.append(("flux-lora", flux_score, flux_reasons))
+
+    krea2_score, krea2_reasons = _score_family(
+        config,
+        marker_keys=KREA2_CONFIG_MARKERS,
+        path_rules=KREA2_PATH_RULES,
+        network_modules=frozenset({"networks.lora_krea2"}),
+    )
+    families.append(("krea2-lora", krea2_score, krea2_reasons))
 
     lumina_score, lumina_reasons = _score_family(
         config,
@@ -435,6 +473,8 @@ def _family_of(train_type: str | None) -> str | None:
         return "anima-fast"
     if train_type in FLUX_TRAIN_TYPES:
         return "flux"
+    if train_type in KREA2_TRAIN_TYPES:
+        return "krea2"
     if train_type in LUMINA_TRAIN_TYPES:
         return "lumina"
     if train_type in SDXL_TRAIN_TYPES:
@@ -745,6 +785,24 @@ def _sanitize_arg_lines(config: dict, key: str) -> None:
         config.pop(key, None)
 
 
+def _apply_krea2_lora_type_consts(config: dict) -> None:
+    """Force Krea2 LoRA / LoKr branch consts so the form union keeps matching."""
+    train_type = _normalize_train_type(config.get("model_train_type"))
+    if train_type not in KREA2_TRAIN_TYPES:
+        return
+    lora_type = str(config.get("lora_type") or "").strip().lower()
+    if lora_type not in KREA2_LORA_TYPE_BRANCH_CONSTS:
+        network_module = str(config.get("network_module") or "").strip()
+        if network_module == "lycoris.kohya":
+            lora_type = "lokr"
+        else:
+            lora_type = "lora"
+    config["lora_type"] = lora_type
+    config.update(KREA2_LORA_TYPE_BRANCH_CONSTS[lora_type])
+    if lora_type == "lora":
+        config.pop("lycoris_algo", None)
+
+
 def _apply_anima_lora_type_consts(config: dict) -> None:
     """Force branch-consistent hidden consts so the lora_type union keeps matching."""
     train_type = _normalize_train_type(config.get("model_train_type"))
@@ -836,6 +894,7 @@ def _finalize_import_config(config: dict) -> dict:
     _hydrate_anima_ui_fields_from_network_args(normalized)
     _hydrate_inserted_only_freeze_from_network_args(normalized)
     _apply_anima_lora_type_consts(normalized)
+    _apply_krea2_lora_type_consts(normalized)
     _hydrate_target_res_for_ui(normalized)
     ensure_enable_preview_flag(normalized)
     return normalized

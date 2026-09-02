@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 # Bump this whenever frontend/dist assets are patched in place (same filename hash).
-SPA_ASSET_CACHE_KEY = "20260818-v2.9.8-29b-sidebar"
+SPA_ASSET_CACHE_KEY = "20260902-krea2-hub"
 
 # Previous keys replaced by scripts/bump_spa_asset_cache_key.py when bumping.
 LEGACY_SPA_ASSET_CACHE_KEYS = (
+    "20260902-krea2-lora",
+    "20260820-help-algorithms-sidebar",
+    "20260818-v2.9.8-29b-sidebar",
     "20260817-v2.9.8-trainer-settings",
     "20260815-v2.9.8-release",
     "20260815-v2.9.9-29b-title",

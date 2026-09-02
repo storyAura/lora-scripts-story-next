@@ -1,0 +1,1 @@
+const e=JSON.parse("{\"key\": \"v-krea2-lora\", \"path\": \"/lora/krea2.html\", \"title\": \"Krea2\", \"lang\": \"en-US\", \"frontmatter\": {\"example\": true, \"trainType\": \"krea2-lora\"}, \"excerpt\": \"\", \"headers\": [], \"filePathRelative\": \"lora/krea2.md\"}");export{e as data};

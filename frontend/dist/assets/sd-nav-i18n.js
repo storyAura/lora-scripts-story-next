@@ -73,6 +73,8 @@
     "SDXL Finetune · Dreambooth": "SDXL finetune · Dreambooth",
     "SD1.5 / SDXL LoRA": "SD1.5 / SDXL LoRA",
     "Flux LoRA": "Flux LoRA",
+    Krea2: "Krea2",
+    "Krea2 LoRA": "Krea2 LoRA",
     "下一代训练 WebUI": "Next-gen training WebUI",
     "Anima DiT 全量微调（full finetune）": "Anima DiT full finetune",
     "更新完整 DiT 权重，适合进阶玩家训练，需充足样本与高显存":

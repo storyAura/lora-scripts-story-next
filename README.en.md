@@ -5,7 +5,7 @@
 <h1 align="center">Next Story Trainer</h1>
 
 <p align="center">
-  <b>One-click LoRA &amp; full finetune training GUI for Windows</b> — supports <b>Anima</b> / SD 1.5 / SDXL / Flux<br/>
+  <b>One-click LoRA &amp; full finetune training GUI for Windows</b> — supports <b>Anima</b> / SD 1.5 / SDXL / Flux / <b>Krea2</b><br/>
   Extract and run. No environment setup needed. ~12 GB VRAM for Anima LoRA; <b>Anima full finetune needs ~24 GB</b>.<br/>
   <sub>Powered by <a href="https://github.com/kohya-ss/sd-scripts">kohya-ss/sd-scripts</a>, Akegarasu-style GUI. Maintained at <a href="https://github.com/storyAura/lora-scripts-story-next">storyAura/lora-scripts-story-next</a>.</sub>
 </p>
@@ -133,7 +133,7 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 **v2.9.8:** **Anima 2.9B** split into two pages — **Anima2.9B** under Anima LoRA, and **Anima2.9B Finetune** under full finetune; optional train-inserted-layers-only. Local 2-step LoRA GPU smoke passed.
 
-**Unreleased (main):** **LyCORIS 4.0** — vendored baseline 4.0.0 (fused kernels, default `auto`) with local overlay algos (bokr / bora / gsokr / glora_boft); Anima LyCORIS defaults `train_llm_adapter`; kohya path honors `exclude_name` (`*adaln_modulation*`). Disk preflight estimates per volume with a single margin; sidebar **UI Settings** renamed **Trainer Settings**.
+**Unreleased (main):** **Krea2 LoRA / LoKr** — train on RAW, infer on Turbo; `shift` / `krea2_shift` / `flux_shift` / `sigmoid` / `uniform` (see [`docs/krea2.md`](docs/krea2.md)). **LyCORIS 4.0** — vendored baseline 4.0.0 (fused kernels, default `auto`) with local overlay algos (bokr / bora / gsokr / glora_boft); Anima LyCORIS defaults `train_llm_adapter`; kohya path honors `exclude_name` (`*adaln_modulation*`). Disk preflight estimates per volume with a single margin; sidebar **UI Settings** renamed **Trainer Settings**.
 
 <p align="center">
   <img src="assets/readme/screenshot-train-monitor.png?v=20260806-nst" alt="Train Monitor Dashboard" width="920" />
@@ -188,7 +188,7 @@ Automatically opens a monitor page (port 6008) when training starts — GPU stat
 
 | Date | Version |
 |------|---------|
-| 2026-09-02 | **Unreleased** — **LyCORIS 4.0**: baseline 4.0.0 + overlay; kernel default `auto`; default `train_llm_adapter`; kohya honors `exclude_name`; disk preflight estimate fix; sidebar **Trainer Settings** · see [CHANGELOG.md](CHANGELOG.md) |
+| 2026-09-02 | **Unreleased** — **Krea2 LoRA / LoKr** (train RAW / infer Turbo, including `krea2_shift`) + **LyCORIS 4.0**: baseline 4.0.0 + overlay; kernel default `auto`; default `train_llm_adapter`; kohya honors `exclude_name`; disk preflight estimate fix; sidebar **Trainer Settings** · see [CHANGELOG.md](CHANGELOG.md), [`docs/krea2.md`](docs/krea2.md) |
 | 2026-08-15 | **v2.9.8** — **Anima 2.9B**: separate LoRA / Finetune pages; optional inserted-layer-only training; 2-step LoRA GPU smoke · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-11 | **v2.9.7** — **Quick Infer** (Anima) + auto base fill + `no_metadata`; preview heun/normal/flow_shift; T-LoRA drops `*_state`; smoke `tests/test_infer_smoke.py` · see [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-10 | **v2.9.6** — **pre-launch disk space check**: structured reject when short (avoids `Errno 28`); bypass `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` · see [CHANGELOG.md](CHANGELOG.md) |

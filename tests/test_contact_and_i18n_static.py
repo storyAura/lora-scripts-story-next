@@ -37,6 +37,22 @@ class ContactAndI18nStaticTests(unittest.TestCase):
         self.assertIn("syncHelpIframeLocale", nav)
         self.assertIn("main.page .theme-default-content", nav)
 
+    def test_sidebar_keeps_help_algorithm_and_params_pages(self):
+        src = (ROOT / "scripts" / "patch-sidebar-nav.py").read_text(encoding="utf-8")
+        app = (ROOT / "frontend" / "dist" / "assets" / "app.547295de.js").read_text(
+            encoding="utf-8"
+        )
+        index = (ROOT / "frontend" / "dist" / "index.html").read_text(encoding="utf-8")
+        for text in (src, app):
+            self.assertIn('{"text":"训练参数说明","link":"/help/training-params.md"}', text)
+            self.assertIn('{"text":"训练算法说明","link":"/help/algorithms.md"}', text)
+            self.assertNotIn('{"text":"训练参数说明","link":"/lora/params.md"}', text)
+        self.assertIn('href="/help/algorithms.md"', index)
+        self.assertIn("训练算法说明", index)
+        self.assertIn('href="/help/training-params.md"', index)
+        self.assertIn('"v-help-algos"', app)
+        self.assertIn('"v-help-tparams"', app)
+
     def test_sidebar_github_points_to_storyaura_repo(self):
         old = "https://github.com/wochenlong/lora-scripts-next"
         new = "https://github.com/storyAura/lora-scripts-story-next"

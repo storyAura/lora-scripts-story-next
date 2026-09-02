@@ -9,10 +9,13 @@ from typing import Any
 from mikazuki.anima_backend.adapter import adapt_anima_config
 from mikazuki.utils.config_args import normalize_custom_args
 from mikazuki.utils.config_import import (
+    KREA2_TRAIN_TYPES,
+    _apply_krea2_lora_type_consts,
     _hydrate_lycoris_ui_fields_from_network_args,
     _looks_like_sd_scripts_toml,
     validate_config_import,
 )
+from mikazuki.utils.krea2_network import apply_krea2_network_configuration
 from mikazuki.utils.train_utils import ensure_enable_preview_flag, fix_config_types
 
 ANIMA_EXPORT_TRAIN_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-2.9b"})
@@ -109,6 +112,14 @@ def normalize_config_for_export(
             cfg["network_args"] = adapted["network_args"]
         _hydrate_lycoris_ui_fields_from_network_args(cfg)
         _ensure_gui_identity_fields(cfg, page_train_type=model_train_type)
+        return cfg, warnings
+
+    if model_train_type in KREA2_TRAIN_TYPES:
+        warnings = apply_krea2_network_configuration(cfg)
+        _hydrate_lycoris_ui_fields_from_network_args(cfg)
+        _ensure_gui_identity_fields(cfg, page_train_type=model_train_type)
+        _apply_krea2_lora_type_consts(cfg)
+        cfg["model_train_type"] = model_train_type
         return cfg, warnings
 
     if model_train_type in ANIMA_EXPORT_TRAIN_TYPES:

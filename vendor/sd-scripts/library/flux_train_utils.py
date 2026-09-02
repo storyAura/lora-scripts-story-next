@@ -497,6 +497,14 @@ def get_noisy_model_input_and_timesteps(
         mu = get_lin_function(y1=0.5, y2=1.15)((h // 2) * (w // 2))  # we are pre-packed so must adjust for packed size
         sigmas = time_shift(mu, 1.0, sigmas)
         timesteps = sigmas * num_timesteps
+    elif args.timestep_sampling == "krea2_shift":
+        # Resolution-aware K2 schedule: 256px -> mu 0.5, 1280px -> mu 1.15 (x2=6400).
+        sigmas = torch.randn(bsz, device=device)
+        sigmas = sigmas * args.sigmoid_scale
+        sigmas = sigmas.sigmoid()
+        mu = get_lin_function(x1=256, y1=0.5, x2=6400, y2=1.15)((h // 2) * (w // 2))
+        sigmas = time_shift(mu, 1.0, sigmas)
+        timesteps = sigmas * num_timesteps
     else:
         # Sample a random timestep for each image
         # for weighting schemes where we sample timesteps non-uniformly
@@ -656,10 +664,10 @@ def add_flux_train_arguments(parser: argparse.ArgumentParser):
 
     parser.add_argument(
         "--timestep_sampling",
-        choices=["sigma", "uniform", "sigmoid", "shift", "flux_shift"],
+        choices=["sigma", "uniform", "sigmoid", "shift", "flux_shift", "krea2_shift"],
         default="sigma",
-        help="Method to sample timesteps: sigma-based, uniform random, sigmoid of random normal, shift of sigmoid and FLUX.1 shifting."
-        " / タイムステップをサンプリングする方法：sigma、random uniform、random normalのsigmoid、sigmoidのシフト、FLUX.1のシフト。",
+        help="Method to sample timesteps: sigma-based, uniform random, sigmoid of random normal, shift of sigmoid, FLUX.1 shifting, and Krea2 resolution-aware shifting."
+        " / タイムステップをサンプリングする方法：sigma、random uniform、random normalのsigmoid、sigmoidのシフト、FLUX.1のシフト、Krea2解像度依存シフト。",
     )
     parser.add_argument(
         "--sigmoid_scale",

@@ -1,0 +1,13 @@
+enable_conv = false
+use_fnmatch = true
+
+# musubi default: wrap every Linear under SingleStreamDiT (~264 modules).
+# Modulation / RMSNorm hold raw Parameters, not Linear, so they are never wrapped.
+unet_target_module = [
+  "SingleStreamDiT",
+]
+unet_target_name = []
+exclude_name = []
+
+text_encoder_target_module = []
+text_encoder_target_name = []

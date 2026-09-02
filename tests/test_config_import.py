@@ -142,6 +142,22 @@ class ConfigImportTests(unittest.TestCase):
         config = {"network_module": "networks.lora_anima"}
         self.assertEqual(infer_train_type(config), "anima-lora")
 
+    def test_infer_krea2_from_network_module_and_paths(self):
+        self.assertEqual(infer_train_type({"network_module": "networks.lora_krea2"}), "krea2-lora")
+        analysis = analyze_train_type({
+            "pretrained_model_name_or_path": "./sd-models/krea2/raw.safetensors",
+            "text_encoder": "./sd-models/krea2/qwen3_vl_4b_instruct.safetensors",
+            "network_module": "networks.lora_krea2",
+        })
+        self.assertEqual(analysis.train_type, "krea2-lora")
+        result = validate_config_import("krea2-lora", {
+            "model_train_type": "krea2-lora",
+            "network_module": "networks.lora_krea2",
+            "pretrained_model_name_or_path": "./sd-models/krea2/raw.safetensors",
+        })
+        self.assertEqual(result["result"], "ok")
+        self.assertEqual(result["config"]["model_train_type"], "krea2-lora")
+
     def test_reject_non_object_config(self):
         result = validate_config_import("sd3-lora", "not-a-dict")  # type: ignore[arg-type]
         self.assertEqual(result["result"], "reject")

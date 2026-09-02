@@ -412,6 +412,59 @@ def validate_training_configuration(
                 "请改用 LoRA / LoRA+ 等，或关闭该开关后使用 LyCORIS（将训练全部 40 层）",
             )
 
+    if normalized_train_type == "krea2-lora":
+        if not str(config.get("text_encoder") or "").strip():
+            raise TrainingConfigurationError(
+                "text_encoder",
+                config.get("text_encoder"),
+                "Krea2 requires a Qwen3-VL-4B-Instruct text encoder",
+            )
+        if not str(config.get("vae") or "").strip():
+            raise TrainingConfigurationError(
+                "vae",
+                config.get("vae"),
+                "Krea2 requires a Qwen-Image VAE",
+            )
+        if _is_truthy(config.get("fp8_scaled")) and not _is_truthy(config.get("fp8_base")):
+            raise TrainingConfigurationError(
+                "fp8_scaled",
+                config.get("fp8_scaled"),
+                "requires fp8_base",
+            )
+        if _is_truthy(config.get("turbo_dit")) and config.get("blocks_to_swap") not in (
+            None,
+            "",
+            0,
+            "0",
+        ):
+            raise TrainingConfigurationError(
+                "turbo_dit",
+                config.get("turbo_dit"),
+                "incompatible with blocks_to_swap",
+            )
+        sampling = str(config.get("timestep_sampling") or "shift").strip().lower()
+        if sampling == "krea2_shift":
+            shift = config.get("discrete_flow_shift")
+            if shift not in (None, "", 2.5, "2.5"):
+                try:
+                    shift_ok = float(shift) == 2.5
+                except (TypeError, ValueError):
+                    shift_ok = False
+                if not shift_ok:
+                    raise TrainingConfigurationError(
+                        "discrete_flow_shift",
+                        config.get("discrete_flow_shift"),
+                        "krea2_shift is resolution-aware; leave discrete_flow_shift empty or 2.5",
+                    )
+        lora_type = str(config.get("lora_type") or "lora").strip().lower()
+        if lora_type not in {"", "lora", "lokr"}:
+            raise TrainingConfigurationError(
+                "lora_type",
+                config.get("lora_type"),
+                "Krea2 currently supports lora and lokr only",
+            )
+        return
+
     if normalized_train_type not in ANIMA_LORA_TRAIN_TYPES:
         return
 

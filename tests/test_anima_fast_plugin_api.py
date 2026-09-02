@@ -240,6 +240,10 @@ class AnimaFastPluginApiTests(unittest.TestCase):
         self.assertEqual(response.status, "success")
         self.assertEqual(response.data["task_id"], "train-1")
         runner.assert_called_once()
+        self.assertEqual(
+            runner.call_args.kwargs["metadata"]["model_train_type"],
+            "anima-lora-fast",
+        )
 
     def test_preflight_response_includes_adapter_warnings(self):
         with tempfile.TemporaryDirectory() as td:

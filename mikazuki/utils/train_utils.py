@@ -342,7 +342,14 @@ def guess_model_type(path):
 
 
 def validate_model(model_name: str, training_type: str = "sd-lora"):
-    if training_type in ["anima-lora", "sd3-lora", "anima-finetune", "anima-2.9b", "anima-2.9b-finetune"]:
+    if training_type in [
+        "anima-lora",
+        "sd3-lora",
+        "anima-finetune",
+        "anima-2.9b",
+        "anima-2.9b-finetune",
+        "krea2-lora",
+    ]:
         return True, "ok"
 
     if os.path.exists(model_name):

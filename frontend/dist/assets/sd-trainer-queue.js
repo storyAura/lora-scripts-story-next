@@ -31,6 +31,7 @@
     "anima-2.9b-finetune": { path: "/lora/anima-2.9b-finetune.html" },
     "flux-lora": { path: "/lora/flux.html" },
     "flux-finetune": { path: "/lora/flux.html" },
+    "krea2-lora": { path: "/lora/krea2.html" },
     "sd-lora": { path: "/lora/master.html" },
     "sdxl-lora": { path: "/lora/master.html" },
     "sdxl-finetune": { path: "/lora/master.html" },

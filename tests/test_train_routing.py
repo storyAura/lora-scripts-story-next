@@ -56,6 +56,17 @@ class TrainRoutingTests(unittest.TestCase):
             "./scripts/dev/anima_train.py",
         )
 
+    def test_krea2_lora_routes_to_vendor_wrapper(self):
+        mapping = load_trainer_mapping()
+        from mikazuki.app.api import resolve_trainer_file
+
+        self.assertEqual(mapping["krea2-lora"], "./scripts/dev/krea2_train_network.py")
+        self.assertEqual(
+            resolve_trainer_file("krea2-lora", {}),
+            "./scripts/dev/krea2_train_network.py",
+        )
+        self.assertNotIn("krea2-finetune", mapping)
+
     def test_legacy_29b_finetune_mode_still_routes_to_full_train_wrapper(self):
         from mikazuki.app.api import resolve_trainer_file
 

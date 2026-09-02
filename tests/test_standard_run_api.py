@@ -78,6 +78,44 @@ class StandardRunApiTests(unittest.TestCase):
         self.assertEqual(response.data["value"], "xformers")
         self.assertIn("probe failed", response.message)
 
+    def test_krea2_run_rejects_missing_text_encoder(self):
+        response = asyncio.run(api.create_toml_file(make_request({
+            "model_train_type": "krea2-lora",
+            "pretrained_model_name_or_path": "./sd-models/krea2/raw.safetensors",
+            "vae": "./sd-models/krea2/qwen_image_vae.safetensors",
+        })))
+
+        self.assertEqual(response.status, "fail")
+        self.assertEqual(response.data["field"], "text_encoder")
+
+    def test_krea2_run_rejects_krea2_shift_with_custom_flow_shift(self):
+        response = asyncio.run(api.create_toml_file(make_request({
+            "model_train_type": "krea2-lora",
+            "pretrained_model_name_or_path": "./sd-models/krea2/raw.safetensors",
+            "vae": "./sd-models/krea2/qwen_image_vae.safetensors",
+            "text_encoder": "./sd-models/krea2/qwen3_vl.safetensors",
+            "timestep_sampling": "krea2_shift",
+            "discrete_flow_shift": 3.0,
+        })))
+
+        self.assertEqual(response.status, "fail")
+        self.assertEqual(response.data["field"], "discrete_flow_shift")
+
+    def test_krea2_run_accepts_scheduler_and_stops_at_dataset(self):
+        response = asyncio.run(api.create_toml_file(make_request({
+            "model_train_type": "krea2-lora",
+            "pretrained_model_name_or_path": "./sd-models/krea2/raw.safetensors",
+            "vae": "./sd-models/krea2/qwen_image_vae.safetensors",
+            "text_encoder": "./sd-models/krea2/qwen3_vl.safetensors",
+            "timestep_sampling": "krea2_shift",
+            "discrete_flow_shift": 2.5,
+            "fp8_base": True,
+            "fp8_scaled": True,
+        })))
+
+        self.assertEqual(response.status, "fail")
+        self.assertEqual(response.data["field"], "train_data_dir")
+
     def test_run_rejects_unknown_standard_train_type_without_500(self):
         response = asyncio.run(api.create_toml_file(make_request({"model_train_type": "unknown-lora"})))
 
@@ -143,6 +181,10 @@ class StandardRunApiTests(unittest.TestCase):
             self.assertTrue(Path(toml_path).is_file())
             self.assertEqual(trainer_file, "./scripts/stable/train_network.py")
             self.assertEqual(cpu_threads, 2)
+            self.assertEqual(
+                run_train.call_args.kwargs.get("metadata"),
+                {"model_train_type": "sd-lora"},
+            )
 
     def test_run_routes_sdxl_lora_to_vendor_trainer(self):
         with tempfile.TemporaryDirectory() as td:

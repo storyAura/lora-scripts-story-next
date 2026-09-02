@@ -92,6 +92,7 @@ from mikazuki.optimizer_configuration import (
 from mikazuki.utils.config_import import validate_config_import
 from mikazuki.utils.config_export import normalize_config_for_export
 from mikazuki.utils.config_args import normalize_custom_args, normalize_kv_arg_list
+from mikazuki.utils.krea2_network import apply_krea2_network_configuration_if_needed
 from mikazuki.utils.devices import printable_devices
 from mikazuki.utils.tk_window import (open_directory_selector,
                                       open_file_selector,
@@ -151,6 +152,7 @@ trainer_mapping = {
     "anima-2.9b-finetune": "./scripts/dev/anima_train.py",
     "flux-lora": "./scripts/dev/flux_train_network.py",
     "flux-finetune": "./scripts/dev/flux_train.py",
+    "krea2-lora": "./scripts/dev/krea2_train_network.py",
 }
 
 
@@ -281,13 +283,14 @@ def get_sample_prompts(config: dict, model_train_type: str = "sd-lora") -> Tuple
     sub_dir = [dir for dir in glob(os.path.join(train_data_dir, '*')) if os.path.isdir(dir)]
 
     use_anima_defaults = model_train_type in ANIMA_TRAIN_TYPES and is_preview_enabled(config)
+    use_krea2_defaults = model_train_type == "krea2-lora" and is_preview_enabled(config)
     default_positive = ANIMA_DEFAULT_SAMPLE_POSITIVE if use_anima_defaults else None
     default_negative = ANIMA_DEFAULT_SAMPLE_NEGATIVE if use_anima_defaults else ''
-    default_width = 1024 if use_anima_defaults else 512
-    default_height = 1024 if use_anima_defaults else 512
-    default_cfg = 4.5 if use_anima_defaults else 7
+    default_width = 1024 if (use_anima_defaults or use_krea2_defaults) else 512
+    default_height = 1024 if (use_anima_defaults or use_krea2_defaults) else 512
+    default_cfg = 4.5 if use_anima_defaults else (5.5 if use_krea2_defaults else 7)
     default_seed = 42 if use_anima_defaults else 2333
-    default_steps = 40 if use_anima_defaults else 24
+    default_steps = 40 if use_anima_defaults else (28 if use_krea2_defaults else 24)
 
     positive_prompts = config.pop("positive_prompts", default_positive)
     negative_prompts = config.pop("negative_prompts", default_negative)
@@ -725,6 +728,7 @@ async def submit_training_config(config: dict):
     toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
     train_utils.fix_config_types(config)
     normalize_custom_args(config)
+    apply_krea2_network_configuration_if_needed(config, str(config.get("model_train_type") or ""))
     try:
         optimizer_config = normalize_optimizer_configuration(config)
         config = optimizer_config.values
@@ -775,6 +779,7 @@ async def submit_training_config(config: dict):
                 adapted.values, [*adapted.warnings, *preview_warnings, *preflight.warnings], run_id, autosave_dir
             )
             metadata = {
+                "model_train_type": model_train_type,
                 "progress_jsonl": adapted_values.get("progress_jsonl"),
                 "output_dir": adapted_values.get("output_dir"),
                 "output_name": adapted_values.get("output_name"),
@@ -868,7 +873,13 @@ async def submit_training_config(config: dict):
     with open(toml_file, "w", encoding="utf-8") as f:
         f.write(toml.dumps(config))
 
-    result = process.run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads)
+    result = process.run_train(
+        toml_file,
+        trainer_file,
+        gpu_ids,
+        suggest_cpu_threads,
+        metadata={"model_train_type": model_train_type},
+    )
 
     return result
 

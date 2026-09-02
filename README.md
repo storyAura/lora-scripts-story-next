@@ -5,7 +5,7 @@
 <h1 align="center">Next Story Trainer</h1>
 
 <p align="center">
-  <b>Windows 一键 LoRA / 全量微调训练工具</b> — 支持 <b>Anima</b> / SD 1.5 / SDXL / Flux<br/>
+  <b>Windows 一键 LoRA / 全量微调训练工具</b> — 支持 <b>Anima</b> / SD 1.5 / SDXL / Flux / <b>Krea2</b><br/>
   解压即用，无需配环境。Anima LoRA 约 12GB 显存即可起步；<b>Anima 全量微调建议 24GB 级显存</b>。<br/>
   <sub>基于 <a href="https://github.com/kohya-ss/sd-scripts">kohya-ss/sd-scripts</a>，秋叶系 GUI 体验。仓库 <a href="https://github.com/storyAura/lora-scripts-story-next">storyAura/lora-scripts-story-next</a>。</sub>
 </p>
@@ -279,7 +279,7 @@ powershell -ExecutionPolicy Bypass -File .\install-cn.ps1
 
 | 日期 | 版本 |
 |------|------|
-| 2026-09-02 | **未发布** — **LyCORIS 4.0**：基线 4.0.0 + overlay；默认 kernel `auto`；默认 `train_llm_adapter`；kohya 执行 `exclude_name`；磁盘预估算修正；侧栏改名「训练器设置」 · 见 [CHANGELOG.md](CHANGELOG.md) |
+| 2026-09-02 | **未发布** — **Krea2 LoRA / LoKr**（RAW 训练 / Turbo 推理，含 `krea2_shift`）+ **LyCORIS 4.0**：基线 4.0.0 + overlay；默认 kernel `auto`；默认 `train_llm_adapter`；kohya 执行 `exclude_name`；磁盘预估算修正；侧栏改名「训练器设置」 · 见 [CHANGELOG.md](CHANGELOG.md)、[`docs/krea2.md`](docs/krea2.md) |
 | 2026-08-15 | **v2.9.8** — **Anima 2.9B**：LoRA / Finetune 分页面；可选只训 12 个插入层；2-step LoRA GPU smoke · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-11 | **v2.9.7** — **快速推理**（Anima）+ 底模自动匹配 + `no_metadata`；预览 heun/normal/flow_shift；T-LoRA 去 `*_state`；冒烟 `tests/test_infer_smoke.py` · 见 [CHANGELOG.md](CHANGELOG.md) |
 | 2026-08-10 | **v2.9.6** — **开训前磁盘预检**：不足则结构化拒绝，避免 `Errno 28`；绕过 `MIKAZUKI_SKIP_DISK_PREFLIGHT=1` · 见 [CHANGELOG.md](CHANGELOG.md) |

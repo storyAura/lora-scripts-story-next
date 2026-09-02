@@ -34,7 +34,13 @@ FINETUNE_RESERVE_MAX_BYTES = 2 * GiB
 MISC_LOGS_BYTES = 128 * MiB
 MISC_PREVIEW_BYTES = 256 * MiB
 
-ANIMA_LORA_TYPES = frozenset({"anima-lora", "sd3-lora", "anima-lora-fast", "anima-2.9b"})
+ANIMA_LORA_TYPES = frozenset({
+    "anima-lora",
+    "sd3-lora",
+    "anima-lora-fast",
+    "anima-2.9b",
+    "krea2-lora",
+})
 SD_FAMILY_LORA_TYPES = frozenset({"sd-lora", "sdxl-lora", "flux-lora"})
 FINETUNE_TYPES = frozenset({
     "anima-finetune",
@@ -318,6 +324,7 @@ def estimate_training_disk_need(
             "anima-finetune",
             "anima-2.9b",
             "anima-2.9b-finetune",
+            "krea2-lora",
         }:
             per = 2 * MiB
         elif model_train_type.startswith("flux"):

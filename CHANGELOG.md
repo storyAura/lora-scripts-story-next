@@ -5,6 +5,13 @@
 ---
 ## Unreleased
 
+### Krea2 LoRA
+
+- 侧栏 **LoRA 训练 → Krea2**（`krea2-lora`）：在 RAW 上训 **LoRA** 或 **LoKr**，推理用 Turbo。移植 musubi-tuner 的 SingleStreamDiT / Qwen3-VL / `krea2_shift`，走现有 accelerate，不另起插件 venv。
+- LoKr 走 `lycoris.kohya` + `config/lycoris_krea2_preset.toml`，圈选 `SingleStreamDiT` 下全部 Linear。
+- 调度器齐套：固定 `shift=2.5`、分辨率感知 `krea2_shift`、`flux_shift` / `sigmoid` / `uniform`，`weighting_scheme=none`。预览仅 euler；Turbo 钉死 μ=1.15。
+- Qwen3-VL 按需导入；当前环境 transformers 过旧时给出明确错误，不升级全局 4.51.3。说明见 [`docs/krea2.md`](docs/krea2.md)。
+
 ### LyCORIS 4.0
 
 - vendored 基线从 3.3.0 升到 **4.0.0**（融合 kernel + `train_llm_adapter`），本地算法（bokr / bora / gsokr / glora_boft）与 Anima 安全补丁仍 overlay。

@@ -47,8 +47,9 @@ def get_old_sidebar_from_file() -> str:
     raise RuntimeError("sidebar not found")
 
 
-# Canonical hydrated sidebar. Keep Anima2.9B / Anima2.9B Finetune here —
-# re-running this script replaces the whole sidebar JSON in app.js.
+# Canonical hydrated sidebar. Keep Anima2.9B / Anima2.9B Finetune and the
+# help pages (training-params / algorithms) here — re-running this script
+# replaces the whole sidebar JSON in app.js.
 NEW_SIDEBAR_JSON = (
     '[{"text":"Next Story Trainer","link":"/"},'
     '{"text":"训练","children":['
@@ -58,6 +59,7 @@ NEW_SIDEBAR_JSON = (
     '{"text":"Fast 模式","link":"/lora/anima-fast.md"},'
     '{"text":"Anima2.9B","link":"/lora/anima-2.9b.md"}]},'
     '{"text":"Flux","link":"/lora/flux.md"},'
+    '{"text":"Krea2","link":"/lora/krea2.md"},'
     '{"text":"Stable Diffusion","link":"/lora/master.md"}]},'
     '{"text":"\\u5168\\u91cf\\u5fae\\u8c03","link":"/lora/anima-finetune.md","collapsible":false,"children":['
     '{"text":"Anima Finetune","link":"/lora/anima-finetune.md"},'
@@ -70,7 +72,8 @@ NEW_SIDEBAR_JSON = (
     '{"text":"LoRA 脚本工具","link":"/lora/tools.md"}]},'
     '{"text":"帮助","children":['
     '{"text":"新手上路","link":"/help/guide.md"},'
-    '{"text":"训练参数说明","link":"/lora/params.md"}]},'
+    '{"text":"训练参数说明","link":"/help/training-params.md"},'
+    '{"text":"训练算法说明","link":"/help/algorithms.md"}]},'
     '{"text":"其他","collapsible":false,"children":['
     '{"text":"训练器设置","link":"/other/settings.md"},'
     '{"text":"关于","link":"/other/about.md"},'
@@ -161,16 +164,27 @@ def build_sidebar_html(rel_path: str) -> str:
         + "<!--]--></ul></li>"
     )
 
-    help_expanded = active("/help/guide.md") or active("/lora/params.md")
+    help_expanded = (
+        active("/help/guide.md")
+        or active("/help/training-params.md")
+        or active("/help/algorithms.md")
+        or active("/lora/params.md")
+    )
     help_block = (
         group_heading("帮助", help_expanded)
         + "<!--[-->"
         + item("/help/guide.md", "新手上路", "新手上路", active("/help/guide.md"))
         + item(
-            "/lora/params.md",
+            "/help/training-params.md",
             "训练参数说明",
             "训练参数说明",
-            active("/lora/params.md"),
+            active("/help/training-params.md") or active("/lora/params.md"),
+        )
+        + item(
+            "/help/algorithms.md",
+            "训练算法说明",
+            "训练算法说明",
+            active("/help/algorithms.md"),
         )
         + "<!--]--></ul></li>"
     )
