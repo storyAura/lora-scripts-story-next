@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from mikazuki.multires import is_multires_enabled, normalize_target_res
+from mikazuki.trainer_settings import disk_preflight_enabled
 
 MiB = 1024 * 1024
 GiB = 1024 * MiB
@@ -344,14 +345,7 @@ def estimate_training_disk_need(
 def skip_disk_preflight() -> bool:
     if str(os.environ.get(SKIP_ENV) or "").strip().lower() in {"1", "true", "yes", "on"}:
         return True
-    try:
-        from mikazuki.trainer_settings import disk_preflight_enabled
-    except ImportError:
-        return False
-    try:
-        return not disk_preflight_enabled()
-    except Exception:
-        return False
+    return not disk_preflight_enabled()
 
 
 def check_training_disk_space(

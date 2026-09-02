@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -10,6 +12,7 @@ from unittest import mock
 import pytest
 
 from mikazuki.app import api
+from mikazuki.app.models import APIResponseSuccess
 from mikazuki.disk_preflight import (
     SKIP_ENV,
     DiskSpaceError,
@@ -20,7 +23,9 @@ from mikazuki.disk_preflight import (
     format_bytes,
     skip_disk_preflight,
 )
+from mikazuki.trainer_settings import save_trainer_settings
 from tests.test_standard_run_api import make_request
+from tests.test_train_queue import make_queue
 
 
 def test_format_bytes():
@@ -305,6 +310,146 @@ class SubmitDiskPreflightTests(unittest.TestCase):
             self.assertEqual(response.status, "fail")
             self.assertEqual(response.data["field"], "disk_space")
             self.assertIn("磁盘空间不足", response.message)
+            run_train.assert_not_called()
+
+
+def _preflight_payload(root: Path) -> dict:
+    data_dir = root / "dataset" / "1_class"
+    data_dir.mkdir(parents=True)
+    (data_dir / "sample.png").write_bytes(b"png")
+    model_path = root / "model.safetensors"
+    model_path.write_bytes(b"not-a-real-model")
+    out = root / "output"
+    out.mkdir()
+    return {
+        "model_train_type": "sdxl-lora",
+        "train_data_dir": str(data_dir.parent),
+        "pretrained_model_name_or_path": str(model_path),
+        "output_dir": str(out),
+        "output_name": "disk-preflight-toggle",
+        "enable_preview": False,
+        "network_dim": 32,
+        "max_train_epochs": 10,
+        "save_every_n_epochs": 1,
+        "cache_latents_to_disk": False,
+    }
+
+
+def _submit_stack(root: Path, run_train, disk_usage):
+    stack = ExitStack()
+    stack.enter_context(mock.patch.object(api.os, "getcwd", return_value=str(root)))
+    stack.enter_context(mock.patch.object(api.train_queue, "intercept_run", return_value=None))
+    stack.enter_context(mock.patch.object(api.process, "run_train", run_train))
+    stack.enter_context(mock.patch.object(api.train_utils, "validate_model", return_value=(True, "ok")))
+    stack.enter_context(mock.patch.object(api.train_utils, "validate_data_dir", return_value=True))
+    stack.enter_context(mock.patch.object(api, "_apply_anima_training_defaults_or_fail", return_value=None))
+    stack.enter_context(disk_usage)
+    return stack
+
+
+class DiskPreflightToggleWiringTests(unittest.TestCase):
+    def _settings_env(self, settings_path: Path):
+        return mock.patch.dict("os.environ", {"MIKAZUKI_TRAINER_SETTINGS": str(settings_path)})
+
+    def test_api_run_skips_when_toggle_off(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            settings = root / "trainer_settings.json"
+            payload = _preflight_payload(root)
+            run_train = mock.Mock(
+                return_value=APIResponseSuccess(message="ok", data={"task_id": "t-off"})
+            )
+            with self._settings_env(settings):
+                os.environ.pop(SKIP_ENV, None)
+                save_trainer_settings({"disk_preflight_enabled": False})
+                disk_usage = mock.patch(
+                    "mikazuki.disk_preflight.shutil.disk_usage",
+                    side_effect=AssertionError("disk_usage should not run when toggle is off"),
+                )
+                with _submit_stack(root, run_train, disk_usage):
+                    response = asyncio.run(api.create_toml_file(make_request(payload)))
+
+            self.assertEqual(response.status, "success")
+            self.assertEqual(response.data["task_id"], "t-off")
+            run_train.assert_called_once()
+
+    def test_api_run_rejects_when_toggle_on_and_disk_short(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            settings = root / "trainer_settings.json"
+            payload = _preflight_payload(root)
+            run_train = mock.Mock(
+                return_value=APIResponseSuccess(message="ok", data={"task_id": "t-on"})
+            )
+            with self._settings_env(settings):
+                os.environ.pop(SKIP_ENV, None)
+                save_trainer_settings({"disk_preflight_enabled": True})
+                disk_usage = mock.patch(
+                    "mikazuki.disk_preflight.shutil.disk_usage",
+                    lambda _path: SimpleNamespace(total=10 * GiB, used=9 * GiB, free=200 * MiB),
+                )
+                with _submit_stack(root, run_train, disk_usage):
+                    response = asyncio.run(api.create_toml_file(make_request(payload)))
+
+            self.assertEqual(response.status, "fail")
+            self.assertEqual(response.data["field"], "disk_space")
+            self.assertIn("磁盘空间不足", response.message)
+            run_train.assert_not_called()
+
+    def test_queue_launch_skips_when_toggle_off(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            settings = root / "trainer_settings.json"
+            payload = _preflight_payload(root)
+            run_train = mock.Mock(
+                return_value=APIResponseSuccess(message="ok", data={"task_id": "t-queue-off"})
+            )
+            queue = make_queue(root)
+            queue.set_submit(api.submit_training_config)
+            queue.stop()
+            queue.intercept_run(payload)
+            launch = dict(queue.entries[0])
+            queue.entries[0]["status"] = "running"
+            with self._settings_env(settings):
+                os.environ.pop(SKIP_ENV, None)
+                save_trainer_settings({"disk_preflight_enabled": False})
+                disk_usage = mock.patch(
+                    "mikazuki.disk_preflight.shutil.disk_usage",
+                    side_effect=AssertionError("disk_usage should not run when toggle is off"),
+                )
+                with _submit_stack(root, run_train, disk_usage):
+                    asyncio.run(queue._launch(launch))
+
+            self.assertEqual(queue.entries[0]["status"], "running")
+            self.assertEqual(queue.entries[0].get("task_id"), "t-queue-off")
+            run_train.assert_called_once()
+
+    def test_queue_launch_fails_when_toggle_on_and_disk_short(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            settings = root / "trainer_settings.json"
+            payload = _preflight_payload(root)
+            run_train = mock.Mock(
+                return_value=APIResponseSuccess(message="ok", data={"task_id": "t-queue-on"})
+            )
+            queue = make_queue(root)
+            queue.set_submit(api.submit_training_config)
+            queue.stop()
+            queue.intercept_run(payload)
+            launch = dict(queue.entries[0])
+            queue.entries[0]["status"] = "running"
+            with self._settings_env(settings):
+                os.environ.pop(SKIP_ENV, None)
+                save_trainer_settings({"disk_preflight_enabled": True})
+                disk_usage = mock.patch(
+                    "mikazuki.disk_preflight.shutil.disk_usage",
+                    lambda _path: SimpleNamespace(total=10 * GiB, used=9 * GiB, free=200 * MiB),
+                )
+                with _submit_stack(root, run_train, disk_usage):
+                    asyncio.run(queue._launch(launch))
+
+            self.assertEqual(queue.entries[0]["status"], "failed")
+            self.assertIn("磁盘空间不足", queue.entries[0]["error"])
             run_train.assert_not_called()
 
 

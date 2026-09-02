@@ -116,6 +116,17 @@ class TrainerSettingsStaticTests(unittest.TestCase):
         self.assertIn("disk_preflight_enabled", settings_js)
         self.assertIn("/assets/sd-trainer-settings.js", app_py)
 
+    def test_settings_script_survives_spa_navigation(self):
+        settings_js = Path("frontend/dist/assets/sd-trainer-settings.js").read_text(encoding="utf-8")
+        self.assertIn("window.__sdTrainerSettingsLoaded", settings_js)
+        self.assertIn("function isSettingsPage()", settings_js)
+        self.assertIn("other/settings", settings_js)
+        self.assertIn(".md", settings_js)
+        self.assertNotIn("if (!PATH_RE.test(location.pathname", settings_js)
+        self.assertIn("hydrateFromServer", settings_js)
+        self.assertIn("Server file is the source of truth", settings_js)
+        self.assertIn("origFetch(API", settings_js)
+
 
 if __name__ == "__main__":
     unittest.main()

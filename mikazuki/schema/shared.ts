@@ -51,7 +51,7 @@
                 conv_alpha: Schema.number().default(1),
                 dropout: Schema.number().step(0.01).default(0).description('dropout 概率。推荐 0~0.5，LoHa/LoKr/(IA)^3暂不支持'),
                 train_norm: Schema.boolean().default(false).description('训练 Norm 层，不支持 (IA)^3。Anima LoKr 会自动禁用 train_norm 以避免 LyCORIS NormModule 采样崩溃。'),
-                lycoris_kernel_backend: Schema.union(["auto", "torch", "triton"]).default("auto").description('LyCORIS 4.0 融合 kernel 后端。auto = 默认，能加速就加速，不行则降回 eager；torch = 纯 PyTorch eager（数值最稳）；triton = 强制 Triton（Linux 用官方 Triton，Windows 需 triton-windows）'),
+                lycoris_kernel_backend: Schema.union(["auto", "torch", "triton"]).default("auto").description("只影响 LyCORIS 算法的步进加速。推荐 auto：能用 Triton 就用，不行自动回退。要强制 Triton 选 triton；数值异常再改回 torch。bokr / bora / gsokr / glora_boft 不走这里"),
             }),
             Schema.object({}),
         ]),

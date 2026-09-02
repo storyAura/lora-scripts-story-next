@@ -433,5 +433,7 @@
   "保存训练状态 配合": "Save training state; combine with",
   "参数可以继续从某个状态训练": "to continue training from a checkpoint.",
   "CLIP 跳过层数": "CLIP layers to skip",
-  "自定义参数，请输入 TOML 格式，将会直接覆盖当前界面内任何参数。实时更新，推荐写完后再粘贴过来": "Custom parameters in TOML. Directly overrides any values on the current form. Updates live — paste after you finish editing."
+  "自定义参数，请输入 TOML 格式，将会直接覆盖当前界面内任何参数。实时更新，推荐写完后再粘贴过来": "Custom parameters in TOML. Directly overrides any values on the current form. Updates live — paste after you finish editing.",
+  "只影响 LyCORIS 算法（LoKr / LoHa / rsLoRA 等）的步进加速。推荐 auto：能用 Triton 就用，不行自动回退。要强制 Triton 选 triton；数值异常再改回 torch。原生 LoRA / T-LoRA 以及 bokr / bora / gsokr / glora_boft 不走这里": "Speeds up LyCORIS (LoKr / LoHa / rsLoRA, etc.). Prefer auto: use Triton when available, otherwise fall back. Choose triton to force it; switch to torch if numbers look wrong. Native LoRA / T-LoRA and bokr / bora / gsokr / glora_boft ignore this.",
+  "只影响 LyCORIS 算法的步进加速。推荐 auto：能用 Triton 就用，不行自动回退。要强制 Triton 选 triton；数值异常再改回 torch。bokr / bora / gsokr / glora_boft 不走这里": "Speeds up LyCORIS algorithms. Prefer auto: use Triton when available, otherwise fall back. Choose triton to force it; switch to torch if numbers look wrong. bokr / bora / gsokr / glora_boft ignore this."
 }
