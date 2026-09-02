@@ -20,9 +20,7 @@ from .modules.full import FullModule
 from .modules.diag_oft import DiagOFTModule
 from .modules.boft import ButterflyOFTModule
 from .modules import make_module, get_module
-from .modules.glokr import GLoKRModule
-from .modules.glora_boft import GLoRABOFTModule
-from .modules.bokr import BokrModule
+from .modules.base import is_supported_linear_module
 
 from .config import PRESET
 from .utils.preset import read_preset
@@ -31,7 +29,14 @@ from .logging import logger
 
 
 def create_network(
-    multiplier, network_dim, network_alpha, vae, text_encoder, unet, warn_on_unmatched=True, **kwargs
+    multiplier,
+    network_dim,
+    network_alpha,
+    vae,
+    text_encoder,
+    unet,
+    warn_on_unmatched=True,
+    **kwargs,
 ):
     for key, value in list(kwargs.items()):
         if key in deprecated_arg_dict:
@@ -66,13 +71,7 @@ def create_network(
     rs_lora = str_bool(kwargs.get("rs_lora", False))
     unbalanced_factorization = str_bool(kwargs.get("unbalanced_factorization", False))
     train_t5xxl = str_bool(kwargs.get("train_t5xxl", False))
-    use_bora = str_bool(kwargs.get("use_bora", False))
-    kron_rank = int(kwargs.get("kron_rank", 1) or 1)
-    rank_dropout_scale = str_bool(kwargs.get("rank_dropout_scale", False))
-    use_g = str_bool(kwargs.get("use_g", True))
-
-    # 本地扩展算法 (glokr/gsokr 等) 的专属 kwargs：仅在显式提供时转发，
-    # 未提供时不进入 root_kwargs，保持原有算法的参数面完全不变。
+    train_llm_adapter = str_bool(kwargs.get("train_llm_adapter", False))
     extra_algo_kwargs = {}
     for _key, _cast in (
         ("train_gates", str_bool),
@@ -87,10 +86,13 @@ def create_network(
         ("cdka_r2", int),
         ("cdka_r", int),
         ("cdka_alpha", float),
+        ("use_bora", str_bool),
+        ("kron_rank", int),
+        ("rank_dropout_scale", str_bool),
+        ("use_g", str_bool),
     ):
         if _key in kwargs:
             extra_algo_kwargs[_key] = _cast(kwargs[_key])
-
     # lora_plus
     loraplus_lr_ratio = (
         float(kwargs.get("loraplus_lr_ratio", None))
@@ -154,9 +156,6 @@ def create_network(
         constraint=constraint,
         rescaled=rescaled,
         weight_decompose=weight_decompose,
-        use_bora=use_bora, 
-        kron_rank=kron_rank,
-        rank_dropout_scale=rank_dropout_scale,
         wd_on_out=wd_on_output,
         full_matrix=full_matrix,
         bypass_mode=bypass_mode,
@@ -164,7 +163,7 @@ def create_network(
         unbalanced_factorization=unbalanced_factorization,
         train_t5xxl=train_t5xxl,
         warn_on_unmatched=warn_on_unmatched,
-        use_g=use_g,  # 将配置项传入网络构建类
+        train_llm_adapter=train_llm_adapter,
         **extra_algo_kwargs,
     )
     if (
@@ -290,9 +289,14 @@ class LycorisNetworkKohya(LycorisNetwork):
         "HunyuanVideoTransformerBlock",  # FramePack
         "HunyuanVideoSingleTransformerBlock",  # FramePack
         "JointTransformerBlock",  # lumina-image-2
-        "FinalLayer",  # lumina-image-2
+        "FinalLayer",  # lumina-image-2, Anima
         "QwenImageTransformerBlock",  # Qwen
+        "LensTransformerBlock",  # Lens
+        "Ideogram4TransformerBlock",  # Ideogram 4
         "ZImageTransformerBlock",
+        "AceStepEncoderLayer",
+        "AceStepDiTLayer",
+        "TextFusionBlock",  # Krea 2
         "Block",  # Anima
         "PatchEmbed",  # Anima
         "TimestepEmbedding",  # Anima
@@ -325,6 +329,7 @@ class LycorisNetworkKohya(LycorisNetwork):
     MODULE_ALGO_MAP = {}
     NAME_ALGO_MAP = {}
     USE_FNMATCH = False
+    TARGET_EXCLUDE_NAME = []
 
     @classmethod
     def apply_preset(cls, preset):
@@ -346,6 +351,8 @@ class LycorisNetworkKohya(LycorisNetwork):
             cls.NAME_ALGO_MAP = preset["name_algo_map"]
         if "use_fnmatch" in preset:
             cls.USE_FNMATCH = preset["use_fnmatch"]
+        if "exclude_name" in preset:
+            cls.TARGET_EXCLUDE_NAME = preset["exclude_name"]
         return cls
 
     def __init__(
@@ -366,6 +373,7 @@ class LycorisNetworkKohya(LycorisNetwork):
         train_norm=False,
         train_t5xxl=False,
         warn_on_unmatched=True,
+        train_llm_adapter=False,
         **kwargs,
     ) -> None:
         torch.nn.Module.__init__(self)
@@ -373,6 +381,7 @@ class LycorisNetworkKohya(LycorisNetwork):
         self.multiplier = multiplier
         self.lora_dim = lora_dim
         self.train_t5xxl = train_t5xxl
+        self.train_llm_adapter = train_llm_adapter
 
         # 初始化LoRA+相关属性
         self.loraplus_lr_ratio = None
@@ -427,7 +436,14 @@ class LycorisNetworkKohya(LycorisNetwork):
                     **kwargs,
                 )
             lora = None
-            if isinstance(module, torch.nn.Linear) and lora_dim > 0:
+            if (
+                is_supported_linear_module(
+                    module,
+                    algo_name,
+                    weight_decompose=kwargs.get("weight_decompose", False),
+                )
+                and lora_dim > 0
+            ):
                 dim = dim or lora_dim
                 alpha = alpha or self.alpha
             elif isinstance(
@@ -471,16 +487,32 @@ class LycorisNetworkKohya(LycorisNetwork):
             root_module: torch.nn.Module,
             algo,
             configs={},
+            target_exclude_names=[],
+            exclude_root: str = "",
         ):
             loras = {}
             lora_names = []
             for name, module in root_module.named_modules():
+                if exclude_root and name:
+                    full_name = f"{exclude_root}.{name}"
+                else:
+                    full_name = name or exclude_root
+                if full_name and (
+                    full_name in target_exclude_names
+                    or any(self.match_fn(t, full_name) for t in target_exclude_names)
+                ):
+                    continue
                 module_name = module.__class__.__name__
                 if module_name in self.MODULE_ALGO_MAP and module is not root_module:
                     next_config = self.MODULE_ALGO_MAP[module_name]
                     next_algo = next_config.get("algo", algo)
                     new_loras, new_lora_names = create_modules_(
-                        f"{prefix}_{name}", module, next_algo, next_config
+                        f"{prefix}_{name}",
+                        module,
+                        next_algo,
+                        next_config,
+                        target_exclude_names=target_exclude_names,
+                        exclude_root=full_name,
                     )
                     for lora_name, lora in zip(new_lora_names, new_loras):
                         if lora_name not in loras:
@@ -507,6 +539,7 @@ class LycorisNetworkKohya(LycorisNetwork):
             root_module: torch.nn.Module,
             target_replace_modules,
             target_replace_names=[],
+            target_exclude_names=[],
         ) -> tuple:
             logger.info("Create LyCORIS Module")
             loras = []
@@ -515,6 +548,10 @@ class LycorisNetworkKohya(LycorisNetwork):
             matched_modules = set()
             matched_names = set()
             for name, module in root_module.named_modules():
+                if name in target_exclude_names or any(
+                    self.match_fn(t, name) for t in target_exclude_names
+                ):
+                    continue
                 module_name = module.__class__.__name__
                 if module_name in target_replace_modules and not any(
                     self.match_fn(t, name) for t in target_replace_names
@@ -526,7 +563,14 @@ class LycorisNetworkKohya(LycorisNetwork):
                     else:
                         algo = network_module
                     loras.extend(
-                        create_modules_(f"{prefix}_{name}", module, algo, next_config)[
+                        create_modules_(
+                            f"{prefix}_{name}",
+                            module,
+                            algo,
+                            next_config,
+                            target_exclude_names=target_exclude_names,
+                            exclude_root=name,
+                        )[
                             0
                         ]
                     )
@@ -585,6 +629,7 @@ class LycorisNetworkKohya(LycorisNetwork):
                     te,
                     LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_MODULE,
                     LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_NAME,
+                    target_exclude_names=LycorisNetworkKohya.TARGET_EXCLUDE_NAME,
                 )
                 self.text_encoder_loras.extend(loras)
                 te_matched_modules.update(matched_mods)
@@ -593,11 +638,17 @@ class LycorisNetworkKohya(LycorisNetwork):
                 f"create LyCORIS for Text Encoder: {len(self.text_encoder_loras)} modules."
             )
 
+        target_modules = list(LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE)
+        if not self.train_llm_adapter:
+            if "LLMAdapterTransformerBlock" in target_modules:
+                target_modules.remove("LLMAdapterTransformerBlock")
+
         self.unet_loras, unet_matched_modules, unet_matched_names = create_modules(
             LycorisNetworkKohya.LORA_PREFIX_UNET,
             unet,
-            LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE,
+            target_modules,
             LycorisNetworkKohya.UNET_TARGET_REPLACE_NAME,
+            target_exclude_names=LycorisNetworkKohya.TARGET_EXCLUDE_NAME,
         )
         logger.info(f"create LyCORIS for U-Net: {len(self.unet_loras)} modules.")
 
@@ -605,8 +656,14 @@ class LycorisNetworkKohya(LycorisNetwork):
         if warn_on_unmatched:
             # Check text encoder targets
             if text_encoder:
-                te_unmatched_modules = set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_MODULE) - te_matched_modules
-                te_unmatched_names = set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_NAME) - te_matched_names
+                te_unmatched_modules = (
+                    set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_MODULE)
+                    - te_matched_modules
+                )
+                te_unmatched_names = (
+                    set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_NAME)
+                    - te_matched_names
+                )
                 if te_unmatched_modules:
                     logger.warning(
                         f"Text Encoder: No modules matched the following target module classes: {sorted(te_unmatched_modules)}"
@@ -617,8 +674,13 @@ class LycorisNetworkKohya(LycorisNetwork):
                     )
 
             # Check unet targets
-            unet_unmatched_modules = set(LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE) - unet_matched_modules
-            unet_unmatched_names = set(LycorisNetworkKohya.UNET_TARGET_REPLACE_NAME) - unet_matched_names
+            unet_unmatched_modules = (
+                set(LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE)
+                - unet_matched_modules
+            )
+            unet_unmatched_names = (
+                set(LycorisNetworkKohya.UNET_TARGET_REPLACE_NAME) - unet_matched_names
+            )
             if unet_unmatched_modules:
                 logger.warning(
                     f"UNet: No modules matched the following target module classes: {sorted(unet_unmatched_modules)}"
@@ -688,18 +750,6 @@ class LycorisNetworkKohya(LycorisNetwork):
             state["unexpected keys"] = unexpected
         return state
 
-    def set_current_timestep(self, timestep):
-        """Broadcast the current denoising timestep to every adapter module.
-
-        Timestep-aware algos (e.g. T-LoRA rank masking) read ``current_timestep``
-        in their forward; other modules simply ignore the attribute.
-        """
-        for lora in self.unet_loras + self.text_encoder_loras:
-            lora.current_timestep = timestep
-
-    def clear_current_timestep(self):
-        self.set_current_timestep(None)
-
     def apply_to(self, text_encoder, unet, apply_text_encoder=None, apply_unet=None):
         assert (
             apply_text_encoder is not None and apply_unet is not None
@@ -725,6 +775,18 @@ class LycorisNetworkKohya(LycorisNetwork):
             # if some weights are not in state dict, it is ok because initial LoRA does nothing (lora_up is initialized by zeros)
             info = self.load_state_dict(self.weights_sd, False)
             logger.info(f"weights are loaded: {info}")
+
+    def set_current_timestep(self, timestep):
+        """Broadcast the current denoising timestep to every adapter module.
+
+        Timestep-aware algos (e.g. T-LoRA rank masking) read ``current_timestep``
+        in their forward; other modules simply ignore the attribute.
+        """
+        for lora in self.unet_loras + self.text_encoder_loras:
+            lora.current_timestep = timestep
+
+    def clear_current_timestep(self):
+        self.set_current_timestep(None)
 
     # TODO refactor to common function with apply_to
     def merge_to(self, text_encoder, unet, weights_sd, dtype, device):

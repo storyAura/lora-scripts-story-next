@@ -6,6 +6,25 @@ import torch.nn.functional as F
 
 from .base import LycorisBaseModule
 from ..functional import tucker_weight_from_conv
+from ..kernels.autograd.glora import glora_diff_weight
+from ..kernels.select import FUSED, call_compiled, choose
+
+
+def _glora_weight(org_weight, a1, a2, b1, b2, bm, gamma):
+    """ΔW = gamma·(W·a1·a2 + b1·b2); the b half is tucker-chained when bm is given."""
+    if bm is not None:
+        wb = tucker_weight_from_conv(b1, b2, bm)
+    else:
+        wb = b1.view(b1.size(0), -1) @ b2.view(b2.size(0), -1)
+        wb = wb.view(*org_weight.shape)
+    wa1 = a1.view(a1.size(0), -1)
+    wa2 = a2.view(a2.size(0), -1)
+    if org_weight.dim() > 2:
+        w_wa1 = torch.einsum("o i ..., i j -> o j ...", org_weight, wa1)
+        w_wa2 = torch.einsum("o i ..., i j -> o j ...", w_wa1, wa2)
+    else:
+        w_wa2 = (org_weight @ wa1) @ wa2
+    return (wb + w_wa2) * gamma
 
 
 class GLoRAModule(LycorisBaseModule):
@@ -180,31 +199,24 @@ class GLoRAModule(LycorisBaseModule):
 
     def make_weight(self, device=None):
         orig = self.org_weight
-        dtype = orig.dtype  # 获取底模目前的精度，如 torch.bfloat16
-
-        # 强制将 GLoRA 自身的参数转为与底模相同的 dtype
-        wa1 = self.a1.weight.view(self.a1.weight.size(0), -1).to(dtype)
-        wa2 = self.a2.weight.view(self.a2.weight.size(0), -1).to(dtype)
-
-        if self.tucker:
-            wb = tucker_weight_from_conv(
-                self.b1.weight.to(dtype),
-                self.b2.weight.to(dtype),
-                self.bm.weight.to(dtype),
-            )
+        bm = self.bm.weight if self.tucker else None
+        args = (
+            orig,
+            self.a1.weight,
+            self.a2.weight,
+            self.b1.weight,
+            self.b2.weight,
+        )
+        # W@a1 keeps its spatial axes on a conv, which the flat 2D fused
+        # rebuild cannot express.
+        backend = choose((*args, bm), supported=bm is None and orig.dim() == 2)
+        if backend in FUSED:
+            weight = glora_diff_weight(*args, gamma=self.scale, backend=backend)
+        elif backend == "compile":
+            weight = call_compiled(_glora_weight, *args, bm, self.scale)
         else:
-            wb1 = self.b1.weight.view(self.b1.weight.size(0), -1).to(dtype)
-            wb2 = self.b2.weight.view(self.b2.weight.size(0), -1).to(dtype)
-            wb = wb1 @ wb2
-            wb = wb.view(*orig.shape)
-            
-        if orig.dim() > 2:
-            w_wa1 = torch.einsum("o i ..., i j -> o j ...", orig, wa1)
-            w_wa2 = torch.einsum("o i ..., i j -> o j ...", w_wa1, wa2)
-        else:
-            w_wa2 = (orig @ wa1) @ wa2
-            
-        return (wb + w_wa2) * self.scale * self.scalar.to(dtype)
+            weight = _glora_weight(*args, bm, self.scale)
+        return weight * self.scalar
 
     def get_diff_weight(self, multiplier=1.0, shape=None, device=None):
         weight = self.make_weight(device) * multiplier
@@ -217,9 +229,12 @@ class GLoRAModule(LycorisBaseModule):
         return self.org_weight + diff_w, None
 
     def _bypass_forward(self, x, scale=1, diff=False):
-        scale = self.scale * scale
-        ax_mid = self.a2(x) * scale
-        bx_mid = self.b2(x) * scale
+        if self.module_type == "linear":
+            ax_mid = F.linear(x, self.a2.weight.to(x))
+            bx_mid = F.linear(x, self.b2.weight.to(x))
+        else:
+            ax_mid = self.a2(x)
+            bx_mid = self.b2(x)
 
         if self.rank_dropout and self.training:
             drop_a = (
@@ -239,12 +254,16 @@ class GLoRAModule(LycorisBaseModule):
                 drop_b = drop_b.view(*[1] * (dims - 1), -1)
             ax_mid = ax_mid * drop_a
             bx_mid = bx_mid * drop_b
-        return (
-            self.org_forward(
-                (0 if diff else x) + self.drop(self.a1(ax_mid)) * self.scale
-            )
-            + self.drop(self.b1(bx_mid)) * self.scale
-        )
+        if self.module_type == "linear":
+            ax = F.linear(ax_mid, self.a1.weight.to(ax_mid))
+            bx = F.linear(bx_mid, self.b1.weight.to(bx_mid))
+        else:
+            ax = self.a1(ax_mid)
+            bx = self.b1(bx_mid)
+        ax_scale = self.scalar.to(ax) * self.scale * scale
+        bx_scale = self.scalar.to(bx) * self.scale * scale
+        base_input = (0 if diff else x) + self.drop(ax) * ax_scale
+        return self.org_forward(base_input) + self.drop(bx) * bx_scale
 
     def bypass_forward_diff(self, x, scale=1):
         return self._bypass_forward(x, scale=scale, diff=True)

@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 
 from mikazuki.app.models import APIResponseFail, APIResponseSuccess
 from mikazuki.log import log
-from mikazuki.process import train_env_overrides
+from mikazuki.portable_utils import train_env_overrides
 from mikazuki.tasks import tm
 from mikazuki.train_queue import train_queue
 

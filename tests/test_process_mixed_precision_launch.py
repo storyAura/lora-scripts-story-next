@@ -245,6 +245,39 @@ class BuildAccelerateTrainCommandTests(unittest.TestCase):
         self.assertIn("/already/here", parts)
         self.assertIn("/second", parts)
 
+    def test_sets_lycoris_kernel_backend_auto_by_default(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            toml_path = Path(tmp) / "train.toml"
+            toml_path.write_text('output_dir = "out"\n', encoding="utf-8")
+            with mock.patch.dict("os.environ", {}, clear=False):
+                os.environ.pop("LYCORIS_KERNEL_BACKEND", None)
+                _args, env, _mp = process.build_accelerate_train_command(
+                    trainer_file="./scripts/stable/train_network.py",
+                    toml_path=str(toml_path),
+                )
+
+        self.assertEqual(env["LYCORIS_KERNEL_BACKEND"], "auto")
+
+    def test_forwards_lycoris_kernel_backend_from_toml(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            toml_path = Path(tmp) / "train.toml"
+            toml_path.write_text(
+                'lycoris_kernel_backend = "torch"\n', encoding="utf-8"
+            )
+            with mock.patch.dict(
+                "os.environ", {"LYCORIS_KERNEL_BACKEND": "auto"}, clear=False
+            ):
+                _args, env, _mp = process.build_accelerate_train_command(
+                    trainer_file="./scripts/stable/train_network.py",
+                    toml_path=str(toml_path),
+                )
+                self.assertEqual(env["LYCORIS_KERNEL_BACKEND"], "torch")
+                self.assertEqual(os.environ["LYCORIS_KERNEL_BACKEND"], "auto")
+
 
 if __name__ == "__main__":
     unittest.main()

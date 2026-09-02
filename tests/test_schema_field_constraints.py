@@ -65,6 +65,20 @@ class LoraTypeBranchMarkerTests(unittest.TestCase):
         for match in re.finditer(r"dora_wd: Schema\.const", schema):
             self.fail(f"dora_wd must not be a Schema.const marker: {match.group(0)}")
 
+    def test_lycoris_40_kernel_and_llm_adapter_defaults(self):
+        for schema_name in ("sd3-lora.ts", "anima-2.9b.ts"):
+            schema = (SCHEMA_DIR / schema_name).read_text(encoding="utf-8")
+            self.assertIn(
+                'lycoris_kernel_backend: Schema.union(["auto", "torch", "triton"]).default("auto")',
+                schema,
+                schema_name,
+            )
+            self.assertIn(
+                "train_llm_adapter: Schema.boolean().default(true)",
+                schema,
+                schema_name,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

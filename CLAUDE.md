@@ -192,7 +192,7 @@ page *is* the Anima page (historical naming, see `frontend/VENDOR.md`).
 | Path | What | Editable? |
 |---|---|---|
 | `vendor/sd-scripts/` | Modified kohya sd-scripts — the real Anima trainers | yes, this is where trainer fixes go |
-| `vendor/lycoris/` | Modified LyCORIS — **frozen 2026-07-29** (LoKr fp32-safe forward + bokr / bora / gsokr / glora_boft; the glokr & cdka copies are legacy-only) | numerical fixes to existing algos only, never new ones — then run the sync script |
+| `vendor/lycoris/` | Modified LyCORIS **4.0.0 + overlay** (fused kernels, LoKr fp32-safe forward + bokr / bora / gsokr / glora_boft; the glokr & cdka copies are legacy-only) | numerical fixes to existing algos only, never new ones — then run the sync script |
 | `scripts/stable/`, `scripts/dev/` | Vendored kohya stable/dev branches | no, except the two `anima_train*.py` wrappers |
 | `frontend/dist/` | Pre-compiled frontend, built elsewhere | patch the built artifacts directly |
 
@@ -212,16 +212,17 @@ gates) progressively wrecks previews and products into saturation/contrast colla
 the root cause of the 07-31 "LoKr 全灭而 LoRA 健康" incident, misattributed for weeks to the
 bf16 forward and then to full_matrix. Preset mechanics: `match_fn` is regex by default, so
 glob-style `exclude_name` patterns need `use_fnmatch = true`; and exclusion inside class-swept
-children only works because the vendored `wrapper.py` threads `target_exclude_names` through
-`create_modules_` (upstream ignores it there). `tests/test_lycoris_preset_exclusion.py`
-guards the mechanism.
+children only works because the vendored `kohya.py` (the real training path) and `wrapper.py`
+thread `target_exclude_names` through `create_modules_`. Upstream 4.0 kohya `apply_preset`
+ignores `exclude_name` unless this overlay is synced. `tests/test_lycoris_preset_exclusion.py`
+guards both paths.
 
 **Algorithm placement rule (2026-07-29, user decree):** new algorithms — paper-based or
 experimental — are standalone `vendor/sd-scripts/networks/*_anima.py` modules (clone the
 `moslora_anima.py` scaffolding: `_network_factory`/`_module_class` hooks over `lora_anima`,
 branch fields forwarded via `ANIMA_NETWORK_MODULE_ARG_FIELDS` in the adapter).
-`vendor/lycoris` is **frozen**: no new algorithms go in, ever; it only keeps what it already
-ships. Precedent: CDKA moved to `networks/cdka_anima.py` (same archive keys; the lycoris copy
+`vendor/lycoris` is **4.0.0 + overlay**: no new algorithms go in, ever; it only keeps what it already
+ships. New algos still belong in `vendor/sd-scripts/networks/*_anima.py`. Precedent: CDKA moved to `networks/cdka_anima.py` (same archive keys; the lycoris copy
 stays untouched for legacy `algo=cdka` configs, `networks.cdka_anima` is canonical).
 
 ### Frontend: patch the build output

@@ -494,6 +494,7 @@ _LYCORIS_NETWORK_ARG_TO_UI: dict[str, str] = {
     "sora_epsilon": "sora_epsilon",
     "constraint": "boft_constraint",
     "rescaled": "boft_rescaled",
+    "train_llm_adapter": "train_llm_adapter",
     "cdka_r1": "cdka_r1",
     "cdka_r2": "cdka_r2",
     "cdka_r": "cdka_r",
@@ -512,6 +513,7 @@ _LYCORIS_BOOL_UI_FIELDS = frozenset({
     "train_norm",
     "use_sora",
     "boft_rescaled",
+    "train_llm_adapter",
 })
 
 _LYCORIS_ALGO_TO_LORA_TYPE = {

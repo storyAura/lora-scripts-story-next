@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .config_sdk import PresetConfig, AlgoOverride
 
-
 FULL_UNET_MODULES = [
     "Transformer2DModel",
     "ResnetBlock2D",
@@ -18,9 +17,14 @@ FULL_UNET_MODULES = [
     "HunyuanVideoTransformerBlock",  # FramePack
     "HunyuanVideoSingleTransformerBlock",  # FramePack
     "JointTransformerBlock",  # lumina-image-2
-    "FinalLayer",  # lumina-image-2
+    "FinalLayer",  # lumina-image-2, Anima
     "QwenImageTransformerBlock",  # Qwen
+    "LensTransformerBlock",  # Lens
+    "Ideogram4TransformerBlock",  # Ideogram 4
     "ZImageTransformerBlock",
+    "AceStepEncoderLayer",
+    "AceStepDiTLayer",
+    "TextFusionBlock",  # Krea 2
     "Block",  # Anima
     "PatchEmbed",  # Anima
     "TimestepEmbedding",  # Anima
@@ -74,9 +78,14 @@ BUILTIN_PRESET_CONFIGS = {
             "HunyuanVideoTransformerBlock",  # FramePack
             "HunyuanVideoSingleTransformerBlock",  # FramePack
             "JointTransformerBlock",  # lumina-image-2
-            "FinalLayer",  # lumina-image-2
+            "FinalLayer",  # lumina-image-2, Anima
             "QwenImageTransformerBlock",  # Qwen
+            "LensTransformerBlock",  # Lens
+            "Ideogram4TransformerBlock",  # Ideogram 4
             "ZImageTransformerBlock",
+            "AceStepEncoderLayer",
+            "AceStepDiTLayer",
+            "TextFusionBlock",  # Krea 2
             "Block",  # Anima
             "PatchEmbed",  # Anima
             "TimestepEmbedding",  # Anima
@@ -103,9 +112,14 @@ BUILTIN_PRESET_CONFIGS = {
             "HunyuanVideoTransformerBlock",  # FramePack
             "HunyuanVideoSingleTransformerBlock",  # FramePack
             "JointTransformerBlock",  # lumina-image-2
-            "FinalLayer",  # lumina-image-2
+            "FinalLayer",  # lumina-image-2, Anima
             "QwenImageTransformerBlock",  # Qwen
+            "LensTransformerBlock",  # Lens
+            "Ideogram4TransformerBlock",  # Ideogram 4
             "ZImageTransformerBlock",
+            "AceStepEncoderLayer",
+            "AceStepDiTLayer",
+            "TextFusionBlock",  # Krea 2
             "Block",  # Anima
             "PatchEmbed",  # Anima
             "TimestepEmbedding",  # Anima
@@ -154,9 +168,14 @@ BUILTIN_PRESET_CONFIGS = {
             "HunyuanVideoTransformerBlock",  # FramePack
             "HunyuanVideoSingleTransformerBlock",  # FramePack
             "JointTransformerBlock",  # lumina-image-2
-            "FinalLayer",  # lumina-image-2
+            "FinalLayer",  # lumina-image-2, Anima
             "QwenImageTransformerBlock",  # Qwen
+            "LensTransformerBlock",  # Lens
+            "Ideogram4TransformerBlock",  # Ideogram 4
             "ZImageTransformerBlock",
+            "AceStepEncoderLayer",
+            "AceStepDiTLayer",
+            "TextFusionBlock",  # Krea 2
             "Block",  # Anima
             "PatchEmbed",  # Anima
             "TimestepEmbedding",  # Anima

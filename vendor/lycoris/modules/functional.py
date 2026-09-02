@@ -11,6 +11,8 @@ def compute_merged_delta(
     multiplier: float,
     transform: Callable[[torch.Tensor], torch.Tensor] | None,
 ) -> torch.Tensor:
+    if multiplier == 0:
+        return torch.zeros_like(base_weight)
     base_fp32 = base_weight.float()
     merged_fp32 = base_fp32 + diff_weight.float() * multiplier
     transformed_fp32 = transform(merged_fp32) if transform is not None else merged_fp32

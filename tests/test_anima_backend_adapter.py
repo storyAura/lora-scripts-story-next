@@ -741,6 +741,38 @@ class LoraTypeOverrideTests(unittest.TestCase):
         self.assertEqual(adapted["network_module"], "lycoris.kohya")
         self.assertEqual(self._arg_value(adapted["network_args"], "algo"), "lokr")
 
+    def test_lycoris_defaults_train_llm_adapter_true_and_drops_kernel_backend(self):
+        adapted, _warnings = adapt_anima_config(
+            {
+                "network_module": "lycoris.kohya",
+                "lycoris_algo": "lokr",
+                "lycoris_kernel_backend": "auto",
+            }
+        )
+        values = [
+            item.split("=", 1)[1].lower()
+            for item in adapted["network_args"]
+            if item.lower().startswith("train_llm_adapter=")
+        ]
+        self.assertEqual(values, ["true"])
+        self.assertNotIn("lycoris_kernel_backend", adapted)
+        self.assertNotIn("train_llm_adapter", adapted)
+
+    def test_lycoris_respects_explicit_train_llm_adapter_false(self):
+        adapted, _warnings = adapt_anima_config(
+            {
+                "network_module": "lycoris.kohya",
+                "lycoris_algo": "lokr",
+                "train_llm_adapter": False,
+            }
+        )
+        values = [
+            item.split("=", 1)[1].lower()
+            for item in adapted["network_args"]
+            if item.lower().startswith("train_llm_adapter=")
+        ]
+        self.assertEqual(values, ["false"])
+
 
 if __name__ == "__main__":
     unittest.main()

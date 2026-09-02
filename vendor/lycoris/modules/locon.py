@@ -7,7 +7,8 @@ import torch.nn.functional as F
 
 from .base import LycorisBaseModule
 from .functional import compute_merged_delta
-from ..functional.general import rebuild_tucker
+from ..functional.general import weight_decompose
+from ..functional.locon import bypass_forward_diff as bypass_diff, diff_weight
 from ..logging import logger
 
 
@@ -46,13 +47,13 @@ class LoConModule(LycorisBaseModule):
         dropout=0.0,
         rank_dropout=0.0,
         module_dropout=0.0,
-        use_tucker=False,          # 保留，防止位置参数错位（DiT 中忽略）
-        use_scalar=False,          # 保留位置不变
-        rank_dropout_scale=False,  # 保留位置不变
-        weight_decompose=False,    # 保留位置不变
-        wd_on_out=True,            # 保留，防止位置参数错位（BoRA 中双向皆有，忽略此单向标志）
-        bypass_mode=None,          # 保留位置不变
-        rs_lora=False,             # 保留位置不变
+        use_tucker=False,
+        use_scalar=False,
+        rank_dropout_scale=False,
+        weight_decompose=False,
+        wd_on_out=True,
+        bypass_mode=None,
+        rs_lora=False,
         **kwargs,
     ):
         """if alpha == 0 or None, alpha is rank (no scaling)."""
@@ -67,20 +68,49 @@ class LoConModule(LycorisBaseModule):
             bypass_mode,
         )
         if self.module_type not in self.support_module:
-            raise ValueError(f"{self.module_type} is not supported in BoRA.")
-            
+            raise ValueError(f"{self.module_type} is not supported in LoRA/LoCon algo.")
         self.lora_dim = lora_dim
+        self.tucker = False
         self.rs_lora = rs_lora
-        self.tucker = False  # 强制设为 False，不对 DiT 使用 Tucker
 
-        # 专为 Linear 层初始化的算子
-        self.isconv = False
-        self.down_op = F.linear
-        self.up_op = F.linear
-        in_dim = org_module.in_features
-        out_dim = org_module.out_features
-        self.lora_down = nn.Linear(in_dim, lora_dim, bias=False)
-        self.lora_up = nn.Linear(lora_dim, out_dim, bias=False)
+        if self.module_type.startswith("conv"):
+            self.isconv = True
+            # For general LoCon. in_dim follows torch Conv weight layout (in/groups)
+            # so rebuild_weight matches F.conv*d when groups != 1 (#260).
+            in_dim = org_module.in_channels // org_module.groups
+            k_size = org_module.kernel_size
+            stride = org_module.stride
+            padding = org_module.padding
+            out_dim = org_module.out_channels
+            use_tucker = use_tucker and any(i != 1 for i in k_size)
+            self.down_op = self.op
+            self.up_op = self.op
+            if org_module.groups != 1 and self.bypass_mode:
+                # Adapter Conv modules are groups=1 and take in/groups channels;
+                # bypass forward on the full activation is not valid for grouped
+                # originals, so force the weight-rebuild path.
+                self.bypass_mode = False
+            if use_tucker and any(i != 1 for i in k_size):
+                self.lora_down = self.module(in_dim, lora_dim, 1, bias=False)
+                self.lora_mid = self.module(
+                    lora_dim, lora_dim, k_size, stride, padding, bias=False
+                )
+                self.tucker = True
+            else:
+                self.lora_down = self.module(
+                    in_dim, lora_dim, k_size, stride, padding, bias=False
+                )
+            self.lora_up = self.module(lora_dim, out_dim, 1, bias=False)
+        elif self.module_type == "linear":
+            self.isconv = False
+            self.down_op = F.linear
+            self.up_op = F.linear
+            in_dim = org_module.in_features
+            out_dim = org_module.out_features
+            self.lora_down = nn.Linear(in_dim, lora_dim, bias=False)
+            self.lora_up = nn.Linear(lora_dim, out_dim, bias=False)
+        else:
+            raise NotImplementedError
 
         self.wd = weight_decompose
         self.wd_on_out = wd_on_out
@@ -114,7 +144,7 @@ class LoConModule(LycorisBaseModule):
             self.dropout = nn.Identity()
 
         if type(alpha) == torch.Tensor:
-            alpha = alpha.detach().float().numpy()
+            alpha = alpha.detach().float().numpy()  # without casting, bf16 causes error
         alpha = lora_dim if alpha is None or alpha == 0 else alpha
 
         r_factor = lora_dim
@@ -129,8 +159,7 @@ class LoConModule(LycorisBaseModule):
             self.scalar = nn.Parameter(torch.tensor(0.0))
         else:
             self.register_buffer("scalar", torch.tensor(1.0), persistent=False)
-            
-        # 权重初始化
+        # same as microsoft's
         torch.nn.init.kaiming_uniform_(self.lora_down.weight, a=math.sqrt(5))
         if use_scalar:
             torch.nn.init.kaiming_uniform_(self.lora_up.weight, a=math.sqrt(5))
@@ -177,15 +206,10 @@ class LoConModule(LycorisBaseModule):
     def make_weight(self, device=None):
         wa = self.lora_up.weight.to(device)
         wb = self.lora_down.weight.to(device)
-        if self.tucker:
-            t = self.lora_mid.weight
-            wa = wa.view(wa.size(0), -1).transpose(0, 1)
-            wb = wb.view(wb.size(0), -1)
-            weight = rebuild_tucker(t, wa, wb)
-        else:
-            weight = wa.view(wa.size(0), -1) @ wb.view(wb.size(0), -1)
-
-        weight = weight.view(self.shape)
+        t = self.lora_mid.weight.to(device) if self.tucker else None
+        # gamma=1: self.scale belongs to the caller and self.scalar can be a
+        # parameter, so neither folds into the rebuild's scale.
+        weight = diff_weight(wb, wa, t, gamma=1.0).view(self.shape)
         if self.training and self.rank_dropout:
             drop = (torch.rand(weight.size(0), device=device) > self.rank_dropout).to(
                 weight.dtype
@@ -216,27 +240,7 @@ class LoConModule(LycorisBaseModule):
         return merged, None
 
     def apply_weight_decompose(self, weight, multiplier=1):
-        weight = weight.to(self.dora_scale.dtype)
-        if self.wd_on_out:
-            weight_norm = (
-                weight.reshape(weight.shape[0], -1)
-                .norm(dim=1)
-                .reshape(weight.shape[0], *[1] * self.dora_norm_dims)
-            ) + torch.finfo(weight.dtype).eps
-        else:
-            weight_norm = (
-                weight.transpose(0, 1)
-                .reshape(weight.shape[1], -1)
-                .norm(dim=1, keepdim=True)
-                .reshape(weight.shape[1], *[1] * self.dora_norm_dims)
-                .transpose(0, 1)
-            ) + torch.finfo(weight.dtype).eps
-
-        scale = self.dora_scale.to(weight.device) / weight_norm
-        if multiplier != 1:
-            scale = multiplier * (scale - 1) + 1
-
-        return weight * scale
+        return weight_decompose(weight, self.dora_scale, multiplier, self.wd_on_out)
 
     def custom_state_dict(self):
         destination = {}
@@ -263,12 +267,15 @@ class LoConModule(LycorisBaseModule):
         return scaled, orig_norm * ratio
 
     def bypass_forward_diff(self, x, scale=1):
-        if self.tucker:
-            mid = self.lora_mid(self.lora_down(x))
-        else:
-            mid = self.lora_down(x)
-
         if self.rank_dropout and self.training:
+            # The mask lives on the r axis between down and up, so this case
+            # keeps the chain split; every other case is one dispatched call.
+            if self.module_type == "linear":
+                mid = F.linear(x, self.lora_down.weight.to(x))
+            elif self.tucker:
+                mid = self.lora_mid(self.lora_down(x))
+            else:
+                mid = self.lora_down(x)
             drop = (
                 torch.rand(self.lora_dim, device=mid.device) > self.rank_dropout
             ).to(mid.dtype)
@@ -279,8 +286,39 @@ class LoConModule(LycorisBaseModule):
             else:
                 drop = drop.view(*[1] * (dims - 1), -1)
             mid = mid * drop
+            if self.module_type == "linear":
+                output = F.linear(mid, self.lora_up.weight.to(mid))
+            else:
+                output = self.lora_up(mid)
+            scalar = self.scalar.to(device=output.device, dtype=output.dtype)
+            return self.dropout(output * scalar * self.scale * scale)
 
-        return self.dropout(self.lora_up(mid) * self.scalar * self.scale * scale)
+        # Geometry from the conv that carries it, not the org module: neither
+        # lora conv is built with the org dilation or groups.
+        op = self.lora_mid if self.tucker else self.lora_down
+        extra_args = (
+            {
+                "stride": op.stride,
+                "padding": op.padding,
+                "dilation": op.dilation,
+                "groups": op.groups,
+            }
+            if self.isconv
+            else {}
+        )
+        # .to(x) so a quantized or fp8 base still works: the adapter weights
+        # meet the activation, not the other way around.
+        diff = bypass_diff(
+            x,
+            None,
+            self.lora_down.weight.to(x),
+            self.lora_up.weight.to(x),
+            self.lora_mid.weight.to(x) if self.tucker else None,
+            gamma=self.scale * scale,
+            extra_args=extra_args,
+        )
+        scalar = self.scalar.to(device=diff.device, dtype=diff.dtype)
+        return self.dropout(diff * scalar)
 
     def bypass_forward(self, x, scale=1):
         return self.org_forward(x) + self.bypass_forward_diff(x, scale=scale)
@@ -298,17 +336,18 @@ class LoConModule(LycorisBaseModule):
         device = x.device
 
         base_weight = self._current_weight().to(device)
-        diff_weight = self.make_weight(device) * scale
-        transform = (
-            (lambda weight: self.apply_weight_decompose(weight, self.multiplier))
-            if self.wd
-            else None
-        )
-        delta_weight = compute_merged_delta(
-            base_weight,
-            diff_weight,
-            self.multiplier,
-            transform,
-        )
-        delta = self.op(x, delta_weight, None, **self.kw_dict)
+        diff_weight = self.make_weight(device).to(device=base_weight.device) * scale
+        if self.wd:
+            delta_weight = compute_merged_delta(
+                base_weight,
+                diff_weight,
+                self.multiplier,
+                lambda merged: self.apply_weight_decompose(merged, self.multiplier),
+            )
+        else:
+            delta_weight = compute_merged_delta(
+                base_weight, diff_weight, self.multiplier, None
+            )
+
+        delta = self.op(x, delta_weight.to(device=x.device, dtype=x.dtype), None, **self.kw_dict)
         return base + delta

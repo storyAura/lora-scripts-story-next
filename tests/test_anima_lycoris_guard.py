@@ -77,5 +77,22 @@ class InstalledLokrForwardNumericTests(unittest.TestCase):
         self.assertEqual(torch.count_nonzero(captured[0]).item(), 16)
 
 
+class LycorisKernelBackendTests(unittest.TestCase):
+    def test_lokr_reexports_compute_merged_delta(self):
+        from lycoris.modules.lokr import compute_merged_delta
+
+        self.assertTrue(callable(compute_merged_delta))
+
+    def test_auto_backend_falls_back_without_triton(self):
+        from lycoris.kernels.dispatch import resolve_backend
+
+        with mock.patch(
+            "lycoris.kernels.dispatch.available_backends",
+            return_value=("torch",),
+        ):
+            self.assertEqual(resolve_backend("auto"), "torch")
+            self.assertEqual(resolve_backend("torch"), "torch")
+
+
 if __name__ == "__main__":
     unittest.main()

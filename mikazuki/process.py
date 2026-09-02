@@ -9,15 +9,19 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-_VALID_ACCELERATE_MIXED_PRECISION = frozenset({"no", "fp16", "bf16"})
-
+from mikazuki.portable_utils import train_env_overrides
 from mikazuki.app.models import APIResponse
 from mikazuki.anima_fast_backend.launcher import build_launch_spec
 from mikazuki.anima_fast_backend.service_resolver import default_resolver
 from mikazuki.log import log
 from mikazuki.tasks import tm
 from mikazuki.launch_utils import base_dir_path
-from mikazuki.portable_utils import train_env_overrides
+
+_VALID_ACCELERATE_MIXED_PRECISION = frozenset({"no", "fp16", "bf16"})
+_VALID_LYCORIS_KERNEL_BACKENDS = frozenset(
+    {"torch", "auto", "triton", "tilelang", "compile"}
+)
+_DEFAULT_LYCORIS_KERNEL_BACKEND = "auto"
 
 
 def _truthy_env(name: str) -> bool:
@@ -61,6 +65,32 @@ def read_mixed_precision_from_train_toml(toml_path: str) -> Optional[str]:
     if not data:
         return None
     return normalize_mixed_precision(data.get("mixed_precision"))
+
+
+def normalize_lycoris_kernel_backend(value: Any) -> str:
+    """Return a LyCORIS 4.0 kernel backend name; unknown values fall back to auto."""
+    if value is None:
+        return _DEFAULT_LYCORIS_KERNEL_BACKEND
+    normalized = str(value).strip().lower()
+    if normalized in _VALID_LYCORIS_KERNEL_BACKENDS:
+        return normalized
+    return _DEFAULT_LYCORIS_KERNEL_BACKEND
+
+
+def read_lycoris_kernel_backend_from_train_toml(toml_path: str) -> Optional[str]:
+    path = Path(toml_path)
+    if not path.is_file():
+        return None
+    try:
+        data = _loads_train_toml(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    if not data:
+        return None
+    raw = data.get("lycoris_kernel_backend")
+    if raw is None or str(raw).strip() == "":
+        return None
+    return normalize_lycoris_kernel_backend(raw)
 
 
 def _path_is_relative_to(path: Path, parent: Path) -> bool:
@@ -161,6 +191,12 @@ def build_accelerate_train_command(
     customize_env["NO_COLOR"] = "1"
     customize_env["FORCE_COLOR"] = "0"
     customize_env["TERM"] = "dumb"
+    kernel_backend = read_lycoris_kernel_backend_from_train_toml(toml_path)
+    if kernel_backend is None:
+        kernel_backend = normalize_lycoris_kernel_backend(
+            customize_env.get("LYCORIS_KERNEL_BACKEND")
+        )
+    customize_env["LYCORIS_KERNEL_BACKEND"] = kernel_backend
 
     if gpu_ids:
         customize_env["CUDA_VISIBLE_DEVICES"] = ",".join(gpu_ids)

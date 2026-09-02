@@ -64,6 +64,8 @@ Schema.intersect([
             dim_from_weights: Schema.boolean().default(false).description("从已有 network_weights 自动推断 rank / dim"),
             scale_weight_norms: Schema.number().step(0.01).min(0).description("最大范数正则化。如果使用，推荐为 1"),
             train_norm: Schema.boolean().default(false).description("额外训练带可学习权重的 Norm 层"),
+            lycoris_kernel_backend: Schema.union(["auto", "torch", "triton"]).default("auto").description("LyCORIS 4.0 融合 kernel 后端，仅 lycoris.kohya 算法生效。auto = 默认，能加速就加速（Triton / compile），不行则降回 eager；torch = 纯 PyTorch eager（数值最稳）；triton = 强制 Triton（Linux 用官方 Triton，Windows 需 triton-windows）。本地扩展算法 bokr/bora/gsokr/glora_boft 不走融合核"),
+            train_llm_adapter: Schema.boolean().default(true).description("训练 LLM Adapter 层（LLMAdapterTransformerBlock）。LyCORIS 4.0 默认会摘掉这一层；本训练器默认保持开启，与 Anima preset 一致。仅 lycoris.kohya 生效"),
             conv_dim: Schema.number().hidden(),
             conv_alpha: Schema.number().hidden(),
             network_args_custom: Schema.array(String).role('table').description("自定义 network_args，一行一个"),

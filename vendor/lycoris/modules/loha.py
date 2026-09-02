@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from .base import LycorisBaseModule
 from .functional import compute_merged_delta
+from ..functional.general import weight_decompose
+from ..functional.loha import bypass_forward_diff as loha_bypass_diff
 from ..functional.loha import diff_weight as loha_diff_weight
 
 
@@ -66,7 +68,7 @@ class LohaModule(LycorisBaseModule):
 
         w_shape = self.shape
         if self.module_type.startswith("conv"):
-            in_dim = org_module.in_channels
+            in_dim = org_module.in_channels // org_module.groups
             k_size = org_module.kernel_size
             out_dim = org_module.out_channels
             self.shape = (out_dim, in_dim, *k_size)
@@ -219,8 +221,10 @@ class LohaModule(LycorisBaseModule):
         if shape is not None:
             weight = weight.reshape(shape)
         if self.training and self.rank_dropout:
-            drop = (torch.rand(weight.size(0)) > self.rank_dropout).to(weight.dtype)
-            drop = drop.view(-1, *[1] * len(weight.shape[1:])).to(weight.device)
+            drop = (
+                torch.rand(weight.size(0), device=weight.device) > self.rank_dropout
+            ).to(weight.dtype)
+            drop = drop.view(-1, *[1] * len(weight.shape[1:]))
             if self.rank_dropout_scale:
                 drop /= drop.mean()
             weight *= drop
@@ -243,27 +247,7 @@ class LohaModule(LycorisBaseModule):
         return merged, None
 
     def apply_weight_decompose(self, weight, multiplier=1):
-        weight = weight.to(self.dora_scale.dtype)
-        if self.wd_on_out:
-            weight_norm = (
-                weight.reshape(weight.shape[0], -1)
-                .norm(dim=1)
-                .reshape(weight.shape[0], *[1] * self.dora_norm_dims)
-            ) + torch.finfo(weight.dtype).eps
-        else:
-            weight_norm = (
-                weight.transpose(0, 1)
-                .reshape(weight.shape[1], -1)
-                .norm(dim=1, keepdim=True)
-                .reshape(weight.shape[1], *[1] * self.dora_norm_dims)
-                .transpose(0, 1)
-            ) + torch.finfo(weight.dtype).eps
-
-        scale = self.dora_scale.to(weight.device) / weight_norm
-        if multiplier != 1:
-            scale = multiplier * (scale - 1) + 1
-
-        return weight * scale
+        return weight_decompose(weight, self.dora_scale, multiplier, self.wd_on_out)
 
     def custom_state_dict(self):
         destination = {}
@@ -293,8 +277,32 @@ class LohaModule(LycorisBaseModule):
         return scaled, orig_norm * ratio
 
     def bypass_forward_diff(self, x, scale=1):
-        diff_weight = self.get_weight(self.shape) * self.scalar * scale
-        return self.drop(self.op(x, diff_weight, **self.kw_dict))
+        scalar = self.scalar.to(device=x.device, dtype=x.dtype)
+        if (
+            self.module_type != "linear"
+            or self.tucker
+            or (self.training and self.rank_dropout)
+        ):
+            # Rank dropout masks ΔW's rows, and a conv ΔW carries the org
+            # weight's spatial shape that the 2D factors here have flattened.
+            diff_weight = self.get_weight(self.shape).to(x) * scalar * scale
+            return self.drop(self.op(x, diff_weight, **self.kw_dict))
+        # .to(x) so a quantized or fp8 base still works: the adapter weights
+        # meet the activation, not the other way around.
+        gamma = torch.tensor(self.scale * scale, dtype=x.dtype, device=x.device)
+        diff = loha_bypass_diff(
+            x,
+            None,
+            self.hada_w1_b.to(x),
+            self.hada_w1_a.to(x),
+            self.hada_w2_b.to(x),
+            self.hada_w2_a.to(x),
+            None,
+            None,
+            gamma=gamma,
+            extra_args=self.kw_dict,
+        )
+        return self.drop(diff * scalar)
 
     def bypass_forward(self, x, scale=1):
         return self.org_forward(x) + self.bypass_forward_diff(x, scale=scale)
@@ -309,17 +317,19 @@ class LohaModule(LycorisBaseModule):
 
         base = self.org_forward(x, *args, **kwargs)
         base_weight = self._current_weight().to(x.device)
-        diff_weight = self.get_weight(self.shape) * self.scalar
-        transform = (
-            (lambda weight: self.apply_weight_decompose(weight, self.multiplier))
-            if self.wd
-            else None
-        )
-        delta_weight = compute_merged_delta(
-            base_weight,
-            diff_weight,
-            self.multiplier,
-            transform,
-        )
-        delta = self.op(x, delta_weight, None, **self.kw_dict)
+        diff_weight = self.get_weight(self.shape).to(device=base_weight.device) * self.scalar
+
+        if self.wd:
+            delta_weight = compute_merged_delta(
+                base_weight,
+                diff_weight,
+                self.multiplier,
+                lambda merged: self.apply_weight_decompose(merged, self.multiplier),
+            )
+        else:
+            delta_weight = compute_merged_delta(
+                base_weight, diff_weight, self.multiplier, None
+            )
+
+        delta = self.op(x, delta_weight.to(device=x.device, dtype=x.dtype), None, **self.kw_dict)
         return base + delta

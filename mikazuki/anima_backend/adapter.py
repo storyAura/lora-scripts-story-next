@@ -231,6 +231,7 @@ UI_ONLY_FIELDS = {
     "lycoris_ext_hint",
     "lora_type",
     "anima_29b_train_mode",
+    "lycoris_kernel_backend",
 }
 
 # Top-level UI fields that should be injected into network_args for T-LoRA.
@@ -348,6 +349,7 @@ LYCORIS_NETWORK_ARG_MAP: dict[str, str] = {
     "sora_epsilon": "sora_epsilon",
     "boft_constraint": "constraint",
     "boft_rescaled": "rescaled",
+    "train_llm_adapter": "train_llm_adapter",
 }
 
 LOKR_TRAIN_NORM_WARNING = (
@@ -532,6 +534,17 @@ def _network_args_has_truthy_arg(network_args: list[str], arg_key: str) -> bool:
     return False
 
 
+def _network_args_has_arg(network_args: list[str], arg_key: str) -> bool:
+    target = arg_key.strip().lower()
+    for item in network_args:
+        if not isinstance(item, str) or "=" not in item:
+            continue
+        key, _value = item.split("=", 1)
+        if key.strip().lower() == target:
+            return True
+    return False
+
+
 def _strip_arg(network_args: list[str], arg_key: str) -> tuple[list[str], bool]:
     stripped: list[str] = []
     removed = False
@@ -637,9 +650,20 @@ def adapt_anima_config(
         network_args = list(source.get("network_args") or [])
         for ui_field, arg_key in LYCORIS_NETWORK_ARG_MAP.items():
             value = source.pop(ui_field, None)
+            if ui_field == "train_llm_adapter":
+                if value is None:
+                    continue
+                network_args.append(
+                    f"{arg_key}={str(_is_truthy_flag(value)).lower()}"
+                )
+                continue
             if _is_empty_value(value):
                 continue
             network_args.append(f"{arg_key}={value}")
+        if not _network_args_has_arg(network_args, "train_llm_adapter"):
+            # 4.0 strips LLMAdapterTransformerBlock unless this is true.
+            # The Anima preset includes that class; keep current training surface.
+            network_args.append("train_llm_adapter=true")
         if _network_args_use_lokr(network_args):
             network_args, removed_train_norm = _strip_arg(network_args, "train_norm")
             if removed_train_norm:

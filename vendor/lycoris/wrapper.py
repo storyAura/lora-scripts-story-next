@@ -18,10 +18,12 @@ from .modules.norms import NormModule
 from .modules.full import FullModule
 from .modules.diag_oft import DiagOFTModule
 from .modules.boft import ButterflyOFTModule
+from .modules.ia3 import IA3Module
 from .modules.tlora import TLoraModule
 from .modules import get_module, make_module
+from .modules.base import is_supported_linear_module, is_weight_only_fp8_linear
 from .modules.glokr import GLoKRModule
-from .modules.glora_boft import GLoRABOFTModule 
+from .modules.glora_boft import GLoRABOFTModule
 from .modules.bokr import BokrModule
 from .modules.bora import BoRAModule
 from .modules.gsokr import GloKrSoraModule
@@ -33,7 +35,6 @@ from .utils.preset import read_preset
 from .utils import str_bool
 from .logging import logger
 
-
 network_module_dict = {
     "lora": LoConModule,
     "locon": LoConModule,
@@ -44,6 +45,7 @@ network_module_dict = {
     "full": FullModule,
     "diag-oft": DiagOFTModule,
     "boft": ButterflyOFTModule,
+    "ia3": IA3Module,
     "tlora": TLoraModule,
     "glokr": GLoKRModule,
     "glora_boft": GLoRABOFTModule,
@@ -61,7 +63,12 @@ deprecated_arg_dict = {
 
 
 def create_lycoris(
-    module, multiplier=1.0, linear_dim=4, linear_alpha=1, warn_on_unmatched=True, **kwargs
+    module,
+    multiplier=1.0,
+    linear_dim=4,
+    linear_alpha=1,
+    warn_on_unmatched=True,
+    **kwargs,
 ):
     for key, value in list(kwargs.items()):
         if key in deprecated_arg_dict:
@@ -94,6 +101,7 @@ def create_lycoris(
     full_matrix = str_bool(kwargs.get("full_matrix", False))
     bypass_mode = str_bool(kwargs.get("bypass_mode", False))
     unbalanced_factorization = str_bool(kwargs.get("unbalanced_factorization", False))
+    train_llm_adapter = str_bool(kwargs.get("train_llm_adapter", False))
 
     if unbalanced_factorization:
         logger.info("Unbalanced factorization for LoKr is enabled")
@@ -142,6 +150,7 @@ def create_lycoris(
         bypass_mode=bypass_mode,
         unbalanced_factorization=unbalanced_factorization,
         warn_on_unmatched=warn_on_unmatched,
+        train_llm_adapter=train_llm_adapter,
     )
 
     return network
@@ -256,6 +265,7 @@ class LycorisNetwork(torch.nn.Module):
         train_norm=False,
         init_only=False,
         warn_on_unmatched=True,
+        train_llm_adapter=False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -276,6 +286,7 @@ class LycorisNetwork(torch.nn.Module):
             return
         self.multiplier = multiplier
         self.lora_dim = lora_dim
+        self.train_llm_adapter = train_llm_adapter
 
         if not self.ENABLE_CONV:
             conv_lora_dim = 0
@@ -325,7 +336,14 @@ class LycorisNetwork(torch.nn.Module):
                     **kwargs,
                 )
             lora = None
-            if isinstance(module, torch.nn.Linear) and lora_dim > 0:
+            if (
+                is_supported_linear_module(
+                    module,
+                    algo_name,
+                    weight_decompose=kwargs.get("weight_decompose", False),
+                )
+                and lora_dim > 0
+            ):
                 dim = dim or lora_dim
                 alpha = alpha or self.alpha
             elif isinstance(
@@ -377,9 +395,6 @@ class LycorisNetwork(torch.nn.Module):
             loras = current_lora_map
             lora_names = []
             for name, module in root_module.named_modules():
-                # Exclusion patterns match full dotted paths from the model
-                # root, so class-swept children honor exclude_name exactly
-                # like the outer name-based loop does.
                 if exclude_root and name:
                     full_name = f"{exclude_root}.{name}"
                 else:
@@ -523,6 +538,11 @@ class LycorisNetwork(torch.nn.Module):
                 ]
             )
         )
+
+        if not self.train_llm_adapter:
+            if "LLMAdapterTransformerBlock" in target_modules:
+                target_modules.remove("LLMAdapterTransformerBlock")
+
         self.loras, matched_modules, matched_names = create_modules(
             LycorisNetwork.LORA_PREFIX,
             module,
@@ -619,17 +639,27 @@ class LycorisNetwork(torch.nn.Module):
             logger.info(f"weights are loaded: {info}")
 
     def is_mergeable(self):
-        return True
+        return not any(
+            is_weight_only_fp8_linear(lora.org_module[0]) for lora in self.loras
+        )
+
+    def _ensure_mergeable(self):
+        if not self.is_mergeable():
+            raise RuntimeError(
+                "Merging LyCORIS modules into weight-only FP8 Linear is not supported."
+            )
 
     def restore(self):
         for lora in self.loras:
             lora.restore()
 
     def merge_to(self, weight=1.0, *, precise: bool = False):
+        self._ensure_mergeable()
         for lora in self.loras:
             lora.merge_to(weight, precise=precise)
 
     def onfly_merge(self, weight=1.0):
+        self._ensure_mergeable()
         for lora in self.loras:
             lora.onfly_merge(weight)
 

@@ -452,6 +452,19 @@ class QueueEditHandoverRoundTripTests(unittest.TestCase):
         self.assertEqual(config["max_train_epochs"], 24)
         self.assertEqual(config["model_train_type"], "anima-lora")
 
+    def test_train_llm_adapter_hydrates_from_network_args(self):
+        result = validate_config_import(
+            "sd3-lora",
+            {
+                "model_train_type": "anima-lora",
+                "lora_type": "lokr",
+                "network_module": "lycoris.kohya",
+                "network_args": ["algo=lokr", "train_llm_adapter=false"],
+            },
+        )
+        self.assertEqual(result["result"], "ok")
+        self.assertIs(result["config"]["train_llm_adapter"], False)
+
 
 class Anima29bConfigImportTests(unittest.TestCase):
     def test_29b_config_is_accepted_on_29b_page(self):

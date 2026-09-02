@@ -22,7 +22,6 @@ from .cdka import CDKAModule
 
 from ..functional.general import factorization
 
-
 MODULE_LIST = [
     LoConModule,
     LohaModule,
