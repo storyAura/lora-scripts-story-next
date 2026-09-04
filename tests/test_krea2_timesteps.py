@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor" / "sd-scri
 
 from library.flux_train_utils import get_lin_function, get_noisy_model_input_and_timesteps, time_shift
 from library.krea2_sampling import krea2_shift_mu, packed_seq_len, timesteps
+from networks import lora_anima, lora_krea2
 
 
 class Krea2TimestepNumericTests(unittest.TestCase):
@@ -124,6 +125,24 @@ class Krea2LoRATargetTests(unittest.TestCase):
         self.assertTrue(hasattr(dit, "device"))
         self.assertTrue(hasattr(dit, "dtype"))
         self.assertEqual(dit.device.type, "meta")
+
+    def test_lora_krea2_uses_subclass_target_not_anima_blocks(self):
+        class SingleStreamDiT(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.proj = nn.Linear(4, 4)
+
+        class Block(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.proj = nn.Linear(4, 4)
+
+        krea_net = lora_krea2.create_network(1.0, 4, 4, None, [None], SingleStreamDiT())
+        self.assertEqual(len(krea_net.unet_loras), 1)
+        with self.assertRaises(ValueError):
+            lora_anima.create_network(1.0, 4, 4, None, [None], SingleStreamDiT())
+        anima_on_block = lora_anima.create_network(1.0, 4, 4, None, [None], Block())
+        self.assertEqual(len(anima_on_block.unet_loras), 1)
 
 
 if __name__ == "__main__":

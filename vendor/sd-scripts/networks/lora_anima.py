@@ -633,20 +633,28 @@ class LoRANetwork(torch.nn.Module):
                 if text_encoder is None:
                     continue
                 logger.info(f"create LoRA for Text Encoder {i+1}:")
-                te_loras, te_skipped = create_modules(False, i, text_encoder, LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE)
+                te_loras, te_skipped = create_modules(False, i, text_encoder, type(self).TEXT_ENCODER_TARGET_REPLACE_MODULE)
                 logger.info(f"create LoRA for Text Encoder {i+1}: {len(te_loras)} modules.")
                 self.text_encoder_loras.extend(te_loras)
                 skipped_te += te_skipped
 
-        # Create LoRA for DiT blocks
-        target_modules = list(LoRANetwork.ANIMA_TARGET_REPLACE_MODULE)
+        # Create LoRA for DiT blocks. Read from the instance class so
+        # networks.lora_krea2 can retarget SingleStreamDiT; a hardcoded
+        # LoRANetwork.ANIMA_TARGET_REPLACE_MODULE always used Anima Block.
+        target_modules = list(type(self).ANIMA_TARGET_REPLACE_MODULE)
         if train_llm_adapter:
-            target_modules.extend(LoRANetwork.ANIMA_ADAPTER_TARGET_REPLACE_MODULE)
+            target_modules.extend(type(self).ANIMA_ADAPTER_TARGET_REPLACE_MODULE)
 
         self.unet_loras: List[Union[LoRAModule, LoRAInfModule]]
         self.unet_loras, skipped_un = create_modules(True, None, unet, target_modules)
 
         logger.info(f"create LoRA for Anima DiT: {len(self.unet_loras)} modules.")
+        if not self.text_encoder_loras and not self.unet_loras:
+            raise ValueError(
+                f"{type(self).__name__} created 0 LoRA modules "
+                f"(DiT targets={target_modules}). The optimizer would get an empty "
+                "parameter list; check that the network module matches the model."
+            )
         if verbose:
             for lora in self.unet_loras:
                 logger.info(f"\t{lora.lora_name:60} {lora.lora_dim}, {lora.alpha}")
