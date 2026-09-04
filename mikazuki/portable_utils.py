@@ -3,9 +3,35 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, MutableMapping, Optional
+
+
+def default_pytorch_alloc_conf() -> str:
+    # expandable_segments is native-allocator only and ignored on Windows.
+    # cudaMallocAsync needs CUDA 11.4+ and is the Linux/AutoDL default.
+    if sys.platform == "win32":
+        return "garbage_collection_threshold:0.8,max_split_size_mb:512"
+    return "backend:cudaMallocAsync,expandable_segments:True"
+
+
+def apply_pytorch_allocator_env(env: MutableMapping[str, str]) -> None:
+    """Set both allocator aliases. A user-set either key wins; the other is synced."""
+    alloc = env.get("PYTORCH_ALLOC_CONF")
+    cuda_alloc = env.get("PYTORCH_CUDA_ALLOC_CONF")
+    if alloc and cuda_alloc:
+        return
+    if alloc:
+        env.setdefault("PYTORCH_CUDA_ALLOC_CONF", alloc)
+        return
+    if cuda_alloc:
+        env.setdefault("PYTORCH_ALLOC_CONF", cuda_alloc)
+        return
+    value = default_pytorch_alloc_conf()
+    env["PYTORCH_ALLOC_CONF"] = value
+    env["PYTORCH_CUDA_ALLOC_CONF"] = value
 
 
 def is_embedded_python(executable: Optional[str] = None) -> bool:

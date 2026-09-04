@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
+from mikazuki.portable_utils import apply_pytorch_allocator_env
+
 from .settings import RuntimeConfig
 
 
@@ -31,6 +33,7 @@ def build_launch_spec(runtime: RuntimeConfig, config_path: Path, task_id: str, g
     env["TERM"] = "dumb"
     env["ANIMA_FAST_PARENT_TASK_ID"] = task_id
     env.pop("PYTHONPATH", None)
+    apply_pytorch_allocator_env(env)
     if runtime.hf_home is not None:
         env["HF_HOME"] = str(runtime.hf_home)
     if gpu_ids:

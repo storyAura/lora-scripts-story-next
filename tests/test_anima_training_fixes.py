@@ -261,24 +261,31 @@ class AllocatorEnvInjectionTests(unittest.TestCase):
         sys.path.insert(0, str(PROJECT_ROOT))
         from mikazuki.process import build_accelerate_train_command
 
-        saved = os.environ.pop("PYTORCH_CUDA_ALLOC_CONF", None)
+        saved_cuda = os.environ.pop("PYTORCH_CUDA_ALLOC_CONF", None)
+        saved_alloc = os.environ.pop("PYTORCH_ALLOC_CONF", None)
         try:
             _, env, _ = build_accelerate_train_command(trainer_file="x.py", toml_path="missing.toml")
             expected = (
                 "garbage_collection_threshold:0.8,max_split_size_mb:512"
                 if _sys.platform == "win32"
-                else "expandable_segments:True"
+                else "backend:cudaMallocAsync,expandable_segments:True"
             )
             self.assertEqual(env.get("PYTORCH_CUDA_ALLOC_CONF"), expected)
+            self.assertEqual(env.get("PYTORCH_ALLOC_CONF"), expected)
 
             os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "user-custom"
             _, env, _ = build_accelerate_train_command(trainer_file="x.py", toml_path="missing.toml")
             self.assertEqual(env.get("PYTORCH_CUDA_ALLOC_CONF"), "user-custom", "user setting must win")
+            self.assertEqual(env.get("PYTORCH_ALLOC_CONF"), "user-custom")
         finally:
-            if saved is None:
-                os.environ.pop("PYTORCH_CUDA_ALLOC_CONF", None)
-            else:
-                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = saved
+            for key, saved in (
+                ("PYTORCH_CUDA_ALLOC_CONF", saved_cuda),
+                ("PYTORCH_ALLOC_CONF", saved_alloc),
+            ):
+                if saved is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = saved
 
 
 class TimestepDtypeTests(unittest.TestCase):

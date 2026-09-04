@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from mikazuki.portable_utils import train_env_overrides
+from mikazuki.portable_utils import apply_pytorch_allocator_env, train_env_overrides
 from mikazuki.app.models import APIResponse
 from mikazuki.anima_fast_backend.launcher import build_launch_spec
 from mikazuki.anima_fast_backend.service_resolver import default_resolver
@@ -173,14 +173,11 @@ def build_accelerate_train_command(
         path_parts.insert(0, project_root)
     customize_env["PYTHONPATH"] = os.pathsep.join(path_parts)
     # CUDA allocator: mitigate VRAM fragmentation OOM (bucketed resolutions and
-    # block swap produce variable-size allocations). expandable_segments is not
-    # supported on Windows (PyTorch warns and ignores it), so use GC threshold +
-    # split cap there. A user-set PYTORCH_CUDA_ALLOC_CONF always wins.
-    if "PYTORCH_CUDA_ALLOC_CONF" not in customize_env:
-        if sys.platform == "win32":
-            customize_env["PYTORCH_CUDA_ALLOC_CONF"] = "garbage_collection_threshold:0.8,max_split_size_mb:512"
-        else:
-            customize_env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    # block swap produce variable-size allocations). Windows cannot use
+    # expandable_segments / cudaMallocAsync, so it keeps GC + split cap.
+    # Linux sets both PYTORCH_ALLOC_CONF and PYTORCH_CUDA_ALLOC_CONF
+    # (newer PyTorch reads the former). A user-set either key always wins.
+    apply_pytorch_allocator_env(customize_env)
     customize_env["ACCELERATE_DISABLE_RICH"] = "1"
     customize_env["PYTHONUNBUFFERED"] = "1"
     customize_env["PYTHONWARNINGS"] = "ignore::FutureWarning,ignore::UserWarning"
