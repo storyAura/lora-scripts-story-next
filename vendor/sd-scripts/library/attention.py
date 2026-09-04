@@ -55,6 +55,25 @@ def _sdpa_backend_context(attn_mode: Optional[str]):
     return sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION)
 
 
+def _repeat_kv_heads_to_match_q(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, head_dim: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Expand GQA k/v heads to q's count.
+
+    Krea 2 uses 48 query / 12 kv heads. Passing enable_gqa=True to SDPA forces the
+    slow math kernel; repeating k/v is numerically identical and stays on fused
+    kernels. flash / sageattn group heads inside the kernel and skip this.
+    """
+    q_heads = q.shape[head_dim]
+    kv_heads = k.shape[head_dim]
+    if q_heads == kv_heads:
+        return k, v
+    if kv_heads <= 0 or q_heads % kv_heads != 0:
+        raise ValueError(f"GQA head count mismatch: q heads={q_heads} kv heads={kv_heads}")
+    group = q_heads // kv_heads
+    return k.repeat_interleave(group, dim=head_dim), v.repeat_interleave(group, dim=head_dim)
+
+
 @dataclass
 class AttentionParams:
     attn_mode: Optional[str] = None
@@ -197,8 +216,9 @@ def attention(
         if attn_params.split_attn:
             x = []
             for i in range(len(q)):
+                ki, vi = _repeat_kv_heads_to_match_q(q[i], k[i], v[i], head_dim=1)
                 with _sdpa_backend_context(attn_params.attn_mode):
-                    x_i = torch.nn.functional.scaled_dot_product_attention(q[i], k[i], v[i], dropout_p=drop_rate)
+                    x_i = torch.nn.functional.scaled_dot_product_attention(q[i], ki, vi, dropout_p=drop_rate)
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -207,6 +227,7 @@ def attention(
             del q, k, v
 
         else:
+            k, v = _repeat_kv_heads_to_match_q(q, k, v, head_dim=1)
             with _sdpa_backend_context(attn_params.attn_mode):
                 x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_params.attention_mask, dropout_p=drop_rate)
             del q, k, v
@@ -215,7 +236,8 @@ def attention(
         if attn_params.split_attn:
             x = []
             for i in range(len(q)):
-                x_i = xops.memory_efficient_attention(q[i], k[i], v[i], p=drop_rate)
+                ki, vi = _repeat_kv_heads_to_match_q(q[i], k[i], v[i], head_dim=2)
+                x_i = xops.memory_efficient_attention(q[i], ki, vi, p=drop_rate)
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -224,6 +246,7 @@ def attention(
             del q, k, v
 
         else:
+            k, v = _repeat_kv_heads_to_match_q(q, k, v, head_dim=2)
             x = xops.memory_efficient_attention(q, k, v, attn_bias=attn_params.attention_mask, p=drop_rate)
             del q, k, v
 

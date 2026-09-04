@@ -69,6 +69,16 @@ class MemEfficientBackendTests(unittest.TestCase):
         out = attention(q, k, v, AttentionParams("torch", False))
         self.assertEqual(tuple(out.shape), (2, 8, 8))
 
+    def test_torch_gqa_expands_kv_heads(self):
+        # Krea 2 DiT: 48 query / 12 kv. Unexpanded SDPA raises
+        # "size of tensor a (48) must match ... b (12) at non-singleton dimension 1".
+        q = torch.randn(1, 16, 48, 8)
+        k = torch.randn(1, 16, 12, 8)
+        v = torch.randn(1, 16, 12, 8)
+        mask = torch.ones(1, 1, 1, 16, dtype=torch.bool)
+        out = attention(q, k, v, AttentionParams("torch", False, attention_mask=mask))
+        self.assertEqual(tuple(out.shape), (1, 16, 48 * 8))
+
     @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA for the efficient kernel")
     def test_mem_efficient_forward_backward_matches_torch(self):
         device = "cuda"
