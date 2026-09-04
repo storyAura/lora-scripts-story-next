@@ -14,6 +14,7 @@ from torch import nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor" / "sd-scripts"))
 
 from library.flux_train_utils import get_lin_function, get_noisy_model_input_and_timesteps, time_shift
+from library.krea2_encoder import Qwen3VLConditioner
 from library.krea2_sampling import krea2_shift_mu, packed_seq_len, timesteps
 from networks import lora_anima, lora_krea2
 
@@ -143,6 +144,13 @@ class Krea2LoRATargetTests(unittest.TestCase):
             lora_anima.create_network(1.0, 4, 4, None, [None], SingleStreamDiT())
         anima_on_block = lora_anima.create_network(1.0, 4, 4, None, [None], Block())
         self.assertEqual(len(anima_on_block.unet_loras), 1)
+
+    def test_qwen3_vl_conditioner_exposes_device_and_dtype(self):
+        qwen = nn.Linear(4, 4)
+        conditioner = Qwen3VLConditioner(qwen, tokenizer=None, processor=None, max_length=8, select_layers=())
+        self.assertEqual(conditioner.device, qwen.weight.device)
+        self.assertEqual(conditioner.dtype, qwen.weight.dtype)
+        self.assertEqual(conditioner.device.type, "cpu")
 
 
 if __name__ == "__main__":

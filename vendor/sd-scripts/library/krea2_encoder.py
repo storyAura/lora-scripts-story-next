@@ -230,6 +230,14 @@ class Qwen3VLConditioner(torch.nn.Module):
         self.prompt_template_encode_start_idx = 34
         self.prompt_template_encode_suffix_start_idx = 5
 
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
     def forward(self, text: list[str]) -> tuple[Tensor, Tensor]:
         prefix_idx = self.prompt_template_encode_start_idx
         text = [self.prompt_template_encode_prefix + item for item in text]
