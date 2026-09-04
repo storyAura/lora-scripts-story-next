@@ -309,6 +309,14 @@ class SingleStreamDiT(nn.Module):
         self.offloader = None
         self.num_blocks = config.layers
 
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
     def enable_gradient_checkpointing(self, cpu_offload: bool = False):
         self.gradient_checkpointing = True
 

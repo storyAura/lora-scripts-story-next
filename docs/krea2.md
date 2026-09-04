@@ -15,6 +15,13 @@ Krea2（K2）是单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE。本仓库做 **LoR
 
 默认路径：`./sd-models/krea2/`。
 
+分词器（`vocab.json` 等）默认会向 Hugging Face 拉 `Qwen/Qwen3-VL-4B-Instruct`。国内网络超时就把这些文件放到下面任一目录（有 `vocab.json` 或 `tokenizer.json` 即可），开训会走本地、不再访问 Hub：
+
+- `./tokenizer-cache/Qwen_Qwen3-VL-4B-Instruct/`
+- `./sd-models/krea2/qwen3_vl_tokenizer/`
+
+需要：`vocab.json`、`merges.txt`、`tokenizer.json`、`tokenizer_config.json`、`special_tokens_map.json`（有 `added_tokens.json` 也一并放进去）。
+
 ## 调度器
 
 训练时间步：

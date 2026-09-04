@@ -12,6 +12,7 @@ CLIP_L_TOKENIZER_HF_ID = "openai/clip-vit-large-patch14"
 SDXL_TOKENIZER1_HF_ID = CLIP_L_TOKENIZER_HF_ID
 SDXL_TOKENIZER2_HF_ID = "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k"
 FLUX_T5_TOKENIZER_HF_ID = "google/t5-v1_1-xxl"
+QWEN3_VL_TOKENIZER_HF_ID = "Qwen/Qwen3-VL-4B-Instruct"
 
 CLIP_TOKENIZER_FILES = (
     "vocab.json",
@@ -56,6 +57,7 @@ TOKENIZER_REPOS_BY_TRAIN_TYPE: dict[str, tuple[str, ...]] = {
     "sdxl-finetune": (CLIP_L_TOKENIZER_HF_ID, SDXL_TOKENIZER2_HF_ID),
     "flux-lora": (CLIP_L_TOKENIZER_HF_ID, FLUX_T5_TOKENIZER_HF_ID),
     "flux-finetune": (CLIP_L_TOKENIZER_HF_ID, FLUX_T5_TOKENIZER_HF_ID),
+    "krea2-lora": (QWEN3_VL_TOKENIZER_HF_ID,),
 }
 
 from mikazuki.china_hub import HF_TO_MODELSCOPE_REPOS

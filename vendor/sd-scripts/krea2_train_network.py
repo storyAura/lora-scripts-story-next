@@ -316,7 +316,12 @@ class Krea2NetworkTrainer(train_network.NetworkTrainer):
         ae.eval()
 
         te_path = args.text_encoder or getattr(args, "text_encoder1", None)
-        text_encoder = krea2_utils.load_krea2_text_encoder(te_path, dtype=weight_dtype, device="cpu")
+        text_encoder = krea2_utils.load_krea2_text_encoder(
+            te_path,
+            dtype=weight_dtype,
+            device="cpu",
+            tokenizer_cache_dir=getattr(args, "tokenizer_cache_dir", None),
+        )
         return krea2_utils.MODEL_VERSION_KREA2, [text_encoder], ae, model
 
     def get_tokenize_strategy(self, args):

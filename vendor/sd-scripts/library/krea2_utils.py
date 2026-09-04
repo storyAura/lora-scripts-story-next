@@ -102,6 +102,7 @@ def load_krea2_text_encoder(
     max_length: int = TextEncoderConfig.max_length,
     select_layers: tuple = TextEncoderConfig.select_layers,
     tokenizer_repo: str = QWEN3_VL_4B_INSTRUCT_REPO_ID,
+    tokenizer_cache_dir: str | None = None,
 ) -> Qwen3VLConditioner:
     return load_qwen3_vl_conditioner(
         path,
@@ -110,6 +111,7 @@ def load_krea2_text_encoder(
         max_length=max_length,
         select_layers=select_layers,
         tokenizer_repo=tokenizer_repo,
+        tokenizer_cache_dir=tokenizer_cache_dir,
     )
 
 

@@ -121,6 +121,9 @@ class Krea2LoRATargetTests(unittest.TestCase):
         exclude = re.compile(r".*(_modulation|_norm|_embedder|final_layer).*")
         dropped = [name for name in linear_names if exclude.fullmatch(name)]
         self.assertEqual(dropped, [])
+        self.assertTrue(hasattr(dit, "device"))
+        self.assertTrue(hasattr(dit, "dtype"))
+        self.assertEqual(dit.device.type, "meta")
 
 
 if __name__ == "__main__":

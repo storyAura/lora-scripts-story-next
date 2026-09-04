@@ -90,6 +90,22 @@ def test_apply_tokenizer_cache_dir_injects_for_sdxl_lora(tmp_path: Path, monkeyp
     assert config["tokenizer_cache_dir"] == str(root).replace("\\", "/")
 
 
+def test_apply_tokenizer_cache_dir_injects_for_krea2_lora(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from mikazuki.app.api import apply_tokenizer_cache_dir
+    from mikazuki.tokenizer_cache import QWEN3_VL_TOKENIZER_HF_ID
+
+    root = tmp_path / "tokenizer-cache"
+    local = tokenizer_local_dir(root, QWEN3_VL_TOKENIZER_HF_ID)
+    local.mkdir(parents=True)
+    for name in required_tokenizer_files(QWEN3_VL_TOKENIZER_HF_ID):
+        (local / name).write_text("x", encoding="utf-8")
+    monkeypatch.setenv("MIKAZUKI_TOKENIZER_CACHE_DIR", str(root))
+
+    config: dict = {}
+    apply_tokenizer_cache_dir(config, "krea2-lora")
+    assert config["tokenizer_cache_dir"] == str(root).replace("\\", "/")
+
+
 def test_apply_tokenizer_cache_dir_injects_for_flux_lora(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from mikazuki.app.api import apply_tokenizer_cache_dir
 

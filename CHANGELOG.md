@@ -11,6 +11,7 @@
 - LoKr 走 `lycoris.kohya` + `config/lycoris_krea2_preset.toml`，圈选 `SingleStreamDiT` 下全部 Linear。
 - 调度器齐套：固定 `shift=2.5`、分辨率感知 `krea2_shift`、`flux_shift` / `sigmoid` / `uniform`，`weighting_scheme=none`。预览仅 euler；Turbo 钉死 μ=1.15。
 - Qwen3-VL 按需导入；当前环境 transformers 过旧时给出明确错误，不升级全局 4.51.3。说明见 [`docs/krea2.md`](docs/krea2.md)。
+- **修复** 缓存文本编码器时 `SingleStreamDiT` 没有 `.device` 导致崩溃；分词器可放本地目录，避免再访问 Hugging Face。
 
 ### LyCORIS 4.0
 

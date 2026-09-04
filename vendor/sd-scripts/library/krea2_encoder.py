@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 from accelerate import init_empty_weights
@@ -22,6 +23,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 QWEN3_VL_4B_INSTRUCT_REPO_ID = "Qwen/Qwen3-VL-4B-Instruct"
+QWEN3_VL_TOKENIZER_DIRNAME = QWEN3_VL_4B_INSTRUCT_REPO_ID.replace("/", "_")
+_TOKENIZER_MARKERS = ("tokenizer.json", "vocab.json")
 
 QWEN3_VL_4B_INSTRUCT_CONFIG = {
     "architectures": ["Qwen3VLForConditionalGeneration"],
@@ -144,6 +147,37 @@ def _load_qwen3_vl_model(
     return model.eval().requires_grad_(False)
 
 
+def _is_tokenizer_dir(path: Path) -> bool:
+    return path.is_dir() and any((path / name).is_file() for name in _TOKENIZER_MARKERS)
+
+
+def resolve_qwen3_vl_tokenizer_source(
+    tokenizer_repo: str | None = None,
+    tokenizer_cache_dir: str | None = None,
+    model_path: str | None = None,
+) -> str:
+    """Prefer a local tokenizer folder so training does not hit huggingface.co."""
+    candidates: list[Path] = []
+    if tokenizer_repo:
+        candidates.append(Path(tokenizer_repo).expanduser())
+    if tokenizer_cache_dir:
+        cache_root = Path(tokenizer_cache_dir).expanduser()
+        candidates.append(cache_root / QWEN3_VL_TOKENIZER_DIRNAME)
+        candidates.append(cache_root)
+    if model_path:
+        te_path = Path(model_path).expanduser()
+        te_dir = te_path if te_path.is_dir() else te_path.parent
+        candidates.append(te_dir / "qwen3_vl_tokenizer")
+        candidates.append(te_dir / QWEN3_VL_TOKENIZER_DIRNAME)
+
+    for path in candidates:
+        if _is_tokenizer_dir(path):
+            logger.info("Loading Krea 2 tokenizer from local folder %s", path)
+            return str(path)
+
+    return tokenizer_repo or QWEN3_VL_4B_INSTRUCT_REPO_ID
+
+
 def load_qwen3_vl_conditioner(
     model_path: str,
     *,
@@ -152,11 +186,22 @@ def load_qwen3_vl_conditioner(
     max_length: int = TextEncoderConfig.max_length,
     select_layers: tuple[int, ...] = TextEncoderConfig.select_layers,
     tokenizer_repo: str = QWEN3_VL_4B_INSTRUCT_REPO_ID,
+    tokenizer_cache_dir: str | None = None,
     disable_mmap: bool = True,
 ) -> "Qwen3VLConditioner":
     qwen = _load_qwen3_vl_model(model_path, dtype=dtype, device=device, disable_mmap=disable_mmap)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, max_length=max_length)
-    processor = Qwen2TokenizerFast.from_pretrained(tokenizer_repo, max_length=max_length)
+    source = resolve_qwen3_vl_tokenizer_source(
+        tokenizer_repo=tokenizer_repo,
+        tokenizer_cache_dir=tokenizer_cache_dir,
+        model_path=model_path,
+    )
+    local_only = Path(source).is_dir()
+    tokenizer = AutoTokenizer.from_pretrained(
+        source, max_length=max_length, local_files_only=local_only
+    )
+    processor = Qwen2TokenizerFast.from_pretrained(
+        source, max_length=max_length, local_files_only=local_only
+    )
     conditioner = Qwen3VLConditioner(qwen, tokenizer, processor, max_length=max_length, select_layers=select_layers)
     return conditioner.eval().requires_grad_(False)
 

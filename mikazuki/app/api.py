@@ -336,12 +336,12 @@ def get_sample_prompts(config: dict, model_train_type: str = "sd-lora") -> Tuple
 
 
 TOKENIZER_CACHE_TRAIN_TYPES = frozenset(
-    {"sd-lora", "sdxl-lora", "sdxl-finetune", "flux-lora", "flux-finetune"}
+    {"sd-lora", "sdxl-lora", "sdxl-finetune", "flux-lora", "flux-finetune", "krea2-lora"}
 )
 
 
 def apply_tokenizer_cache_dir(config: dict, model_train_type: str) -> None:
-    """Use bundled tokenizer-cache when available so SD/SDXL/Flux training works offline."""
+    """Use bundled tokenizer-cache when available so SD/SDXL/Flux/Krea2 training works offline."""
     if model_train_type not in TOKENIZER_CACHE_TRAIN_TYPES:
         return
     if config.get("tokenizer_cache_dir"):
