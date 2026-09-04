@@ -96,6 +96,12 @@ class Krea2TextEncoderOutputsCachingStrategy(TextEncoderOutputsCachingStrategy):
                 info.text_encoder_outputs = (hiddens_np[i], mask_np[i])
 
 
+# Qwen-Image VAE spatial_compression_ratio = 2 ** len(temperal_downsample) = 8.
+# Cache keys are VAE latent HxW (e.g. 832x1216 → latents_104x152). Using Hunyuan's
+# stride 32 looked for latents_26x38 and crashed on the first DataLoader batch.
+KREA2_LATENTS_STRIDE = 8
+
+
 class Krea2LatentsCachingStrategy(LatentsCachingStrategy):
     NPZ_SUFFIX = "_krea2.npz"
 
@@ -110,12 +116,14 @@ class Krea2LatentsCachingStrategy(LatentsCachingStrategy):
         return os.path.splitext(absolute_path)[0] + f"_{image_size[0]:04d}x{image_size[1]:04d}" + self.NPZ_SUFFIX
 
     def is_disk_cached_latents_expected(self, bucket_reso: Tuple[int, int], npz_path: str, flip_aug: bool, alpha_mask: bool):
-        return self._default_is_disk_cached_latents_expected(32, bucket_reso, npz_path, flip_aug, alpha_mask, multi_resolution=True)
+        return self._default_is_disk_cached_latents_expected(
+            KREA2_LATENTS_STRIDE, bucket_reso, npz_path, flip_aug, alpha_mask, multi_resolution=True
+        )
 
     def load_latents_from_disk(
         self, npz_path: str, bucket_reso: Tuple[int, int]
     ) -> Tuple[Optional[np.ndarray], Optional[List[int]], Optional[List[int]], Optional[np.ndarray], Optional[np.ndarray]]:
-        return self._default_load_latents_from_disk(32, npz_path, bucket_reso)
+        return self._default_load_latents_from_disk(KREA2_LATENTS_STRIDE, npz_path, bucket_reso)
 
     def cache_batch_latents(self, vae, image_infos: List, flip_aug: bool, alpha_mask: bool, random_crop: bool):
         def encode_by_vae(img_tensor):

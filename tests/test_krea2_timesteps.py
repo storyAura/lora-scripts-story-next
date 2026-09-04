@@ -3,11 +3,13 @@ from __future__ import annotations
 import math
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -16,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor" / "sd-scri
 from library.flux_train_utils import get_lin_function, get_noisy_model_input_and_timesteps, time_shift
 from library.krea2_encoder import Qwen3VLConditioner
 from library.krea2_sampling import krea2_shift_mu, packed_seq_len, timesteps
+from library.strategy_krea2 import KREA2_LATENTS_STRIDE, Krea2LatentsCachingStrategy
 from networks import lora_anima, lora_krea2
 
 
@@ -151,6 +154,36 @@ class Krea2LoRATargetTests(unittest.TestCase):
         self.assertEqual(conditioner.device, qwen.weight.device)
         self.assertEqual(conditioner.dtype, qwen.weight.dtype)
         self.assertEqual(conditioner.device.type, "cpu")
+
+
+class Krea2LatentCacheTests(unittest.TestCase):
+    def test_load_uses_vae_8x_key_not_hunyuan_32(self):
+        self.assertEqual(KREA2_LATENTS_STRIDE, 8)
+        bucket = (1216, 832)  # W, H — the AutoDL crash looked for _26x38 (stride 32)
+        latent_h = bucket[1] // KREA2_LATENTS_STRIDE
+        latent_w = bucket[0] // KREA2_LATENTS_STRIDE
+        self.assertEqual((latent_h, latent_w), (104, 152))
+        self.assertEqual((bucket[1] // 32, bucket[0] // 32), (26, 38))
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "frame_1856x1280_krea2.npz"
+            suffix = f"_{latent_h}x{latent_w}"
+            np.savez(
+                path,
+                **{
+                    f"latents{suffix}": np.zeros((16, latent_h, latent_w), dtype=np.float32),
+                    f"original_size{suffix}": np.array([1856, 1280]),
+                    f"crop_ltrb{suffix}": np.array([0, 0, 1216, 832]),
+                },
+            )
+            strategy = Krea2LatentsCachingStrategy(True, 1, False)
+            self.assertTrue(strategy.is_disk_cached_latents_expected(bucket, str(path), False, False))
+            latents, original_size, crop_ltrb, flipped, alpha = strategy.load_latents_from_disk(str(path), bucket)
+            self.assertEqual(latents.shape[-2:], (latent_h, latent_w))
+            self.assertEqual(original_size, [1856, 1280])
+            self.assertEqual(crop_ltrb, [0, 0, 1216, 832])
+            self.assertIsNone(flipped)
+            self.assertIsNone(alpha)
 
 
 if __name__ == "__main__":
