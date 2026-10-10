@@ -1,18 +1,22 @@
 # Ported from kohya-ss/musubi-tuner (Apache-2.0):
 # src/musubi_tuner/krea2/krea2_encoder.py
-# Qwen3-VL is imported lazily so transformers 4.51 still boots Anima.
+# Local change: only the Qwen3-VL language tower is built, as transformers' Qwen3Model,
+# so the conditioner runs on the pinned transformers 4.51 (the Qwen3-VL classes need
+# >= 4.57) and the unused vision tower is never loaded.
 
 """Krea 2 text encoder: Qwen3-VL-4B conditioner."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import torch
 from accelerate import init_empty_weights
 from torch import Tensor
-from transformers import AutoTokenizer, Qwen2TokenizerFast
+from transformers import AutoTokenizer, Qwen2TokenizerFast, Qwen3Config, Qwen3Model
 
 from library.safetensors_utils import load_split_weights
 from library.utils import setup_logging
@@ -26,71 +30,38 @@ QWEN3_VL_4B_INSTRUCT_REPO_ID = "Qwen/Qwen3-VL-4B-Instruct"
 QWEN3_VL_TOKENIZER_DIRNAME = QWEN3_VL_4B_INSTRUCT_REPO_ID.replace("/", "_")
 _TOKENIZER_MARKERS = ("tokenizer.json", "vocab.json")
 
-QWEN3_VL_4B_INSTRUCT_CONFIG = {
-    "architectures": ["Qwen3VLForConditionalGeneration"],
-    "image_token_id": 151655,
-    "model_type": "qwen3_vl",
-    "text_config": {
-        "attention_bias": False,
-        "attention_dropout": 0.0,
-        "bos_token_id": 151643,
-        "dtype": "bfloat16",
-        "eos_token_id": 151645,
-        "head_dim": 128,
-        "hidden_act": "silu",
-        "hidden_size": 2560,
-        "initializer_range": 0.02,
-        "intermediate_size": 9728,
-        "max_position_embeddings": 262144,
-        "model_type": "qwen3_vl_text",
-        "num_attention_heads": 32,
-        "num_hidden_layers": 36,
-        "num_key_value_heads": 8,
-        "rms_norm_eps": 1e-06,
-        "rope_scaling": {"mrope_interleaved": True, "mrope_section": [24, 20, 20], "rope_type": "default"},
-        "rope_theta": 5000000,
-        "tie_word_embeddings": True,
-        "use_cache": True,
-        "vocab_size": 151936,
-    },
+# text_config of Qwen/Qwen3-VL-4B-Instruct. Text-only input gives the interleaved M-RoPE
+# identical t/h/w positions, which is plain 1D RoPE, and the deepstack visual injection
+# never fires, so the language tower computes exactly what a Qwen3 model does.
+QWEN3_VL_4B_TEXT_CONFIG = {
+    "vocab_size": 151936,
+    "hidden_size": 2560,
+    "intermediate_size": 9728,
+    "num_hidden_layers": 36,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "head_dim": 128,
+    "hidden_act": "silu",
+    "max_position_embeddings": 262144,
+    "rms_norm_eps": 1e-06,
+    "rope_theta": 5000000,
+    "attention_bias": False,
+    "attention_dropout": 0.0,
     "tie_word_embeddings": True,
-    "transformers_version": "4.57.0.dev0",
-    "video_token_id": 151656,
-    "vision_config": {
-        "deepstack_visual_indexes": [5, 11, 17],
-        "depth": 24,
-        "hidden_act": "gelu_pytorch_tanh",
-        "hidden_size": 1024,
-        "in_channels": 3,
-        "initializer_range": 0.02,
-        "intermediate_size": 4096,
-        "model_type": "qwen3_vl",
-        "num_heads": 16,
-        "num_position_embeddings": 2304,
-        "out_hidden_size": 2560,
-        "patch_size": 16,
-        "spatial_merge_size": 2,
-        "temporal_patch_size": 2,
-    },
-    "vision_end_token_id": 151653,
-    "vision_start_token_id": 151652,
+    "use_sliding_window": False,
+    "sliding_window": None,  # Qwen3-VL has none; 4.51 warns on any non-None value
 }
 
+# Checkpoint layouts: HF Qwen3VLForConditionalGeneration ("model.language_model."),
+# the Krea-2-Raw diffusers text_encoder ("language_model.") and the Comfy single file
+# ("model."). The longest prefix has to be tried first.
+_LANGUAGE_MODEL_PREFIXES = ("model.language_model.", "language_model.", "model.")
+_NON_TEXT_PREFIXES = ("model.visual.", "visual.", "lm_head.")
+_QUANTIZED_KEY_SUFFIXES = (".weight_scale", ".scale_weight", ".comfy_quant", ".scaled_fp8")
 
-class Krea2TextEncoderUnavailableError(RuntimeError):
-    """Raised when this venv's transformers cannot build Qwen3-VL."""
 
-
-def require_qwen3_vl():
-    try:
-        from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
-    except ImportError as error:
-        raise Krea2TextEncoderUnavailableError(
-            "Krea2 文本编码器需要带 Qwen3-VL 的 transformers（通常 >= 4.57）。"
-            "当前环境无法 import Qwen3VLForConditionalGeneration。"
-            "请先缓存文本输出，或在确认 Anima 不受影响后再升级 transformers。"
-        ) from error
-    return Qwen3VLConfig, Qwen3VLForConditionalGeneration
+class Krea2TextEncoderCheckpointError(RuntimeError):
+    """Raised when a checkpoint cannot be used as the Krea2 Qwen3-VL text encoder."""
 
 
 @dataclass
@@ -100,46 +71,48 @@ class TextEncoderConfig:
     tokenizer_repo: str = QWEN3_VL_4B_INSTRUCT_REPO_ID
 
 
-def _convert_comfyui_qwen3vl_state_dict(sd: dict[str, Tensor]) -> dict[str, Tensor]:
+def extract_language_model_state_dict(sd: dict[str, Tensor]) -> dict[str, Tensor]:
+    """Keep only the Qwen3-VL language tower, keyed like transformers' Qwen3Model."""
+    quantized = [key for key in sd if key == "scaled_fp8" or key.endswith(_QUANTIZED_KEY_SUFFIXES)]
+    if quantized:
+        raise Krea2TextEncoderCheckpointError(
+            f"Krea2 文本编码器不支持 fp8 / 量化版 Qwen3-VL 权重（检测到 {quantized[0]}）。"
+            "请改用 bf16 版：Krea-2-Raw 的 text_encoder/model.safetensors，"
+            "或 Comfy-Org/Krea-2 的 text_encoders/qwen3vl_4b_bf16.safetensors。"
+        )
+
     converted: dict[str, Tensor] = {}
     for key, value in sd.items():
-        if key.startswith("model.language_model.") or key.startswith("model.visual."):
-            new_key = key
-        elif key.startswith("visual."):
-            new_key = "model.visual." + key[len("visual.") :]
-        elif key.startswith("language_model."):
-            new_key = "model." + key
-        elif key.startswith("model."):
-            new_key = "model.language_model." + key[len("model.") :]
-        else:
-            new_key = key
+        if key.startswith(_NON_TEXT_PREFIXES):
+            continue
+        new_key = key
+        for prefix in _LANGUAGE_MODEL_PREFIXES:
+            if key.startswith(prefix):
+                new_key = key[len(prefix) :]
+                break
         converted[new_key] = value
     return converted
 
 
-def _load_qwen3_vl_model(
+def _load_qwen3_vl_text_model(
     model_path: str,
     *,
     dtype: torch.dtype,
     device: torch.device | str,
     disable_mmap: bool = True,
-):
-    Qwen3VLConfig, Qwen3VLForConditionalGeneration = require_qwen3_vl()
-    config = Qwen3VLConfig.from_dict(QWEN3_VL_4B_INSTRUCT_CONFIG)
+) -> Qwen3Model:
+    config = Qwen3Config(**QWEN3_VL_4B_TEXT_CONFIG)
     with init_empty_weights():
-        model = Qwen3VLForConditionalGeneration._from_config(config)
+        model = Qwen3Model._from_config(config)
 
-    logger.info("Loading Krea 2 text encoder (Qwen3-VL) weights from %s", model_path)
+    logger.info("Loading Krea 2 text encoder (Qwen3-VL language model) weights from %s", model_path)
     sd = load_split_weights(model_path, device=str(device), disable_mmap=disable_mmap, dtype=dtype)
-    sd = _convert_comfyui_qwen3vl_state_dict(sd)
+    sd = extract_language_model_state_dict(sd)
     info = model.load_state_dict(sd, strict=False, assign=True)
-    model.tie_weights()
-    unexpected = list(info.unexpected_keys)
-    missing = [k for k in info.missing_keys if k != "lm_head.weight"]
-    if unexpected or missing:
-        raise RuntimeError(
+    if info.unexpected_keys or info.missing_keys:
+        raise Krea2TextEncoderCheckpointError(
             f"Qwen3-VL text encoder checkpoint did not match the model: "
-            f"missing={missing[:10]}, unexpected={unexpected[:10]}"
+            f"missing={list(info.missing_keys)[:10]}, unexpected={list(info.unexpected_keys)[:10]}"
         )
     model.to(device)
     if dtype is not None:
@@ -149,6 +122,40 @@ def _load_qwen3_vl_model(
 
 def _is_tokenizer_dir(path: Path) -> bool:
     return path.is_dir() and any((path / name).is_file() for name in _TOKENIZER_MARKERS)
+
+
+def tokenizer_compat_kwargs(source: str) -> dict[str, Any]:
+    """from_pretrained overrides that let transformers 4.x read a tokenizer saved by 5.x.
+
+    transformers 5.x writes ``extra_special_tokens`` as a list (4.x calls it
+    ``additional_special_tokens``), while 4.x expects a name -> token mapping there and
+    fails with ``'list' object has no attribute 'keys'``. The Krea-2-Raw ``tokenizer/``
+    folder ships in that form. The file on disk is left untouched.
+    """
+    config_path = Path(source) / "tokenizer_config.json"
+    if not config_path.is_file():
+        return {}
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    extra = config.get("extra_special_tokens")
+    if not isinstance(extra, list):
+        return {}
+
+    additional = list(config.get("additional_special_tokens") or [])
+    for token in extra:
+        content = token.get("content") if isinstance(token, dict) else token
+        if isinstance(content, str) and content not in additional:
+            additional.append(content)
+    logger.info("%s lists extra_special_tokens (transformers 5.x format); loading them as additional_special_tokens", config_path)
+    return {"extra_special_tokens": {}, "additional_special_tokens": additional}
+
+
+def load_qwen3_vl_tokenizer(tokenizer_class: Any, source: str, **kwargs: Any) -> Any:
+    return tokenizer_class.from_pretrained(
+        source, local_files_only=Path(source).is_dir(), **tokenizer_compat_kwargs(source), **kwargs
+    )
 
 
 def resolve_qwen3_vl_tokenizer_source(
@@ -169,6 +176,9 @@ def resolve_qwen3_vl_tokenizer_source(
         te_dir = te_path if te_path.is_dir() else te_path.parent
         candidates.append(te_dir / "qwen3_vl_tokenizer")
         candidates.append(te_dir / QWEN3_VL_TOKENIZER_DIRNAME)
+        if te_dir.name == "text_encoder":
+            # diffusers layout (krea/Krea-2-Raw): <repo>/text_encoder + <repo>/tokenizer
+            candidates.append(te_dir.parent / "tokenizer")
 
     for path in candidates:
         if _is_tokenizer_dir(path):
@@ -189,19 +199,14 @@ def load_qwen3_vl_conditioner(
     tokenizer_cache_dir: str | None = None,
     disable_mmap: bool = True,
 ) -> "Qwen3VLConditioner":
-    qwen = _load_qwen3_vl_model(model_path, dtype=dtype, device=device, disable_mmap=disable_mmap)
+    qwen = _load_qwen3_vl_text_model(model_path, dtype=dtype, device=device, disable_mmap=disable_mmap)
     source = resolve_qwen3_vl_tokenizer_source(
         tokenizer_repo=tokenizer_repo,
         tokenizer_cache_dir=tokenizer_cache_dir,
         model_path=model_path,
     )
-    local_only = Path(source).is_dir()
-    tokenizer = AutoTokenizer.from_pretrained(
-        source, max_length=max_length, local_files_only=local_only
-    )
-    processor = Qwen2TokenizerFast.from_pretrained(
-        source, max_length=max_length, local_files_only=local_only
-    )
+    tokenizer = load_qwen3_vl_tokenizer(AutoTokenizer, source, max_length=max_length)
+    processor = load_qwen3_vl_tokenizer(Qwen2TokenizerFast, source, max_length=max_length)
     conditioner = Qwen3VLConditioner(qwen, tokenizer, processor, max_length=max_length, select_layers=select_layers)
     return conditioner.eval().requires_grad_(False)
 
@@ -257,7 +262,18 @@ class Qwen3VLConditioner(torch.nn.Module):
             ).to(self.qwen.device, non_blocking=True)
             input_ids = torch.cat([inputs["input_ids"], suffix_ids], dim=1)
             mask = torch.cat([inputs["attention_mask"].bool(), suffix_mask], dim=1)
-            states = self.qwen(input_ids=input_ids, attention_mask=mask, output_hidden_states=True)
+            # The suffix follows the padding, so its rotary positions must continue from the last prompt
+            # token (padded positions repeat the previous one). Qwen3-VL derived these from the mask on
+            # transformers 4.x; a plain Qwen3 model uses the sequence index unless told otherwise.
+            # Same positions as musubi-tuner b3f3d65d.
+            position_ids = (mask.long().cumsum(-1) - 1).clamp(min=0)
+            states = self.qwen(
+                input_ids=input_ids,
+                attention_mask=mask.long(),
+                position_ids=position_ids,
+                output_hidden_states=True,
+                use_cache=False,
+            )
 
         hiddens = torch.stack([states.hidden_states[i] for i in self.select_layers], dim=2)
         hiddens = hiddens[:, prefix_idx:]

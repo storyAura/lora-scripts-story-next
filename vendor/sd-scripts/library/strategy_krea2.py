@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
@@ -23,9 +24,21 @@ logger = logging.getLogger(__name__)
 
 
 class Krea2TokenizeStrategy(TokenizeStrategy):
-    def __init__(self, tokenizer_repo: Optional[str] = None, tokenizer_cache_dir: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        tokenizer_repo: Optional[str] = None,
+        tokenizer_cache_dir: Optional[str] = None,
+        text_encoder_path: Optional[str] = None,
+    ) -> None:
         repo = tokenizer_repo or krea2_encoder.QWEN3_VL_4B_INSTRUCT_REPO_ID
-        self.tokenizer = self._load_tokenizer(AutoTokenizer, repo, tokenizer_cache_dir=tokenizer_cache_dir)
+        # Same lookup as the conditioner, so captions are tokenized by the tokenizer that encodes them.
+        source = krea2_encoder.resolve_qwen3_vl_tokenizer_source(
+            tokenizer_repo=repo, tokenizer_cache_dir=tokenizer_cache_dir, model_path=text_encoder_path
+        )
+        if Path(source).is_dir():
+            self.tokenizer = krea2_encoder.load_qwen3_vl_tokenizer(AutoTokenizer, source)
+        else:
+            self.tokenizer = self._load_tokenizer(AutoTokenizer, repo, tokenizer_cache_dir=tokenizer_cache_dir)
 
     def tokenize(self, text: Union[str, List[str]]) -> List[torch.Tensor]:
         captions = [text] if isinstance(text, str) else list(text)

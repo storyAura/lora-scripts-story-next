@@ -99,7 +99,7 @@ Schema.intersect([
     Schema.object(
         UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
             fp8_base: Schema.boolean().default(true).description("对基础模型使用 FP8 精度"),
-            fp8_scaled: Schema.boolean().default(false).description("缩放 FP8。必须同时打开 fp8_base"),
+            fp8_scaled: Schema.boolean().default(true).description("缩放 FP8。必须同时打开 fp8_base"),
             sdpa: Schema.boolean().default(true).description("启用 sdpa"),
             cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存文本编码器的输出，减少显存使用。使用时需要关闭 shuffle_caption"),
             cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("缓存文本编码器的输出到磁盘"),

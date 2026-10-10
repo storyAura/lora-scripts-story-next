@@ -251,8 +251,19 @@ class Krea2NetworkTrainer(train_network.NetworkTrainer):
             raise ValueError("Krea2 requires --text_encoder (Qwen3-VL-4B-Instruct)")
         if not args.vae:
             raise ValueError("Krea2 requires --vae (Qwen-Image VAE)")
-        if getattr(args, "fp8_scaled", False) and not getattr(args, "fp8_base", False):
-            raise ValueError("Krea2 --fp8_scaled requires --fp8_base")
+        if args.mixed_precision != "bf16":
+            raise ValueError(f"Krea2 trains in bf16 only; got --mixed_precision={args.mixed_precision}")
+        # K2 fp8 is the scaled path only: plain --fp8_base would cast the whole DiT (norms and
+        # modulation included) to fp8 and break it, which is why musubi-tuner rejects it.
+        if args.fp8_base and not getattr(args, "fp8_scaled", False):
+            logger.warning("Krea2 supports only scaled fp8; enabling --fp8_scaled for --fp8_base")
+            args.fp8_scaled = True
+        if getattr(args, "fp8_scaled", False):
+            # The DiT is quantized while loading. Clearing fp8_base keeps train_network from casting the
+            # whole model to fp8 afterwards (norms and the per-weight scales included) and from applying
+            # the native-fp8 hardware gate: scaled fp8 dequantizes to bf16, so it also runs on Ampere.
+            args.fp8_base = False
+            args.fp8_base_unet = False
         if getattr(args, "turbo_dit", False) and getattr(args, "blocks_to_swap", None):
             raise ValueError("Krea2 --turbo_dit is incompatible with --blocks_to_swap")
 
@@ -292,16 +303,13 @@ class Krea2NetworkTrainer(train_network.NetworkTrainer):
         if attn_mode == "sdpa":
             attn_mode = "torch"
 
-        loading_dtype = None if (args.fp8_base or getattr(args, "fp8_scaled", False)) else weight_dtype
         model = krea2_utils.load_krea2_dit(
             args.pretrained_model_name_or_path,
-            dtype=torch.bfloat16 if loading_dtype is None else loading_dtype,
+            dtype=weight_dtype,
             device="cpu",
             fp8_scaled=bool(getattr(args, "fp8_scaled", False)),
             attn_mode=attn_mode,
         )
-        if args.fp8_base and not getattr(args, "fp8_scaled", False):
-            model.to(weight_dtype)
 
         if self.is_swapping_blocks:
             logger.info(f"enable block swap: blocks_to_swap={args.blocks_to_swap}")
@@ -325,7 +333,10 @@ class Krea2NetworkTrainer(train_network.NetworkTrainer):
         return krea2_utils.MODEL_VERSION_KREA2, [text_encoder], ae, model
 
     def get_tokenize_strategy(self, args):
-        return strategy_krea2.Krea2TokenizeStrategy(tokenizer_cache_dir=args.tokenizer_cache_dir)
+        return strategy_krea2.Krea2TokenizeStrategy(
+            tokenizer_cache_dir=args.tokenizer_cache_dir,
+            text_encoder_path=args.text_encoder or getattr(args, "text_encoder1", None),
+        )
 
     def get_tokenizers(self, tokenize_strategy: strategy_krea2.Krea2TokenizeStrategy):
         return [tokenize_strategy.tokenizer]
@@ -469,6 +480,10 @@ class Krea2NetworkTrainer(train_network.NetworkTrainer):
         metadata["ss_model_prediction_type"] = args.model_prediction_type
         metadata["ss_discrete_flow_shift"] = args.discrete_flow_shift
         metadata["ss_weighting_scheme"] = args.weighting_scheme
+        metadata["ss_fp8_scaled"] = bool(getattr(args, "fp8_scaled", False))
+
+    def cast_unet(self, args):
+        return not getattr(args, "fp8_scaled", False)  # a cast would drop the fp8 weights' scales
 
     def is_text_encoder_not_needed_for_training(self, args):
         return args.cache_text_encoder_outputs and not self.is_train_text_encoder(args)
@@ -524,7 +539,9 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Fixed Euler flow shift when timestep_sampling=shift. Default 2.5.",
     )
     parser.set_defaults(weighting_scheme="none")
-    parser.add_argument("--fp8_scaled", action="store_true", help="Use scaled fp8 for DiT; requires --fp8_base")
+    parser.add_argument(
+        "--fp8_scaled", action="store_true", help="Use scaled fp8 for DiT (also what --fp8_base turns into for Krea2)"
+    )
     parser.add_argument(
         "--attn_mode",
         choices=["torch", "xformers", "flash", "sageattn", "sdpa"],

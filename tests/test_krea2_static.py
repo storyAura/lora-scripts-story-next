@@ -88,7 +88,10 @@ class Krea2TrainerStaticTests(unittest.TestCase):
         self.assertIn("uniform", source)
         self.assertIn("discrete_flow_shift", source)
         self.assertIn("networks.lora_krea2", (ROOT / "vendor" / "sd-scripts" / "networks" / "lora_krea2.py").read_text(encoding="utf-8"))
-        self.assertIn("Krea2TextEncoderUnavailableError", (ROOT / "vendor" / "sd-scripts" / "library" / "krea2_encoder.py").read_text(encoding="utf-8"))
+        encoder = (ROOT / "vendor" / "sd-scripts" / "library" / "krea2_encoder.py").read_text(encoding="utf-8")
+        # Text-only Qwen3 tower: runs on the pinned transformers 4.51 (no Qwen3-VL classes there).
+        self.assertIn("Qwen3Model", encoder)
+        self.assertNotRegex(encoder, r"import[^\n]*Qwen3VL")
 
 
 class Krea2RoutingTests(unittest.TestCase):
