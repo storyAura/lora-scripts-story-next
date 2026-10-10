@@ -425,11 +425,13 @@ def validate_training_configuration(
                 config.get("vae"),
                 "Krea2 requires a Qwen-Image VAE",
             )
-        if _is_truthy(config.get("fp8_scaled")) and not _is_truthy(config.get("fp8_base")):
+        # fp8_base / fp8_scaled need no pairing here: the trainer runs either one as scaled fp8.
+        mixed_precision = str(config.get("mixed_precision") or "bf16").strip().lower()
+        if mixed_precision != "bf16":
             raise TrainingConfigurationError(
-                "fp8_scaled",
-                config.get("fp8_scaled"),
-                "requires fp8_base",
+                "mixed_precision",
+                config.get("mixed_precision"),
+                "Krea2 trains in bf16 only",
             )
         if _is_truthy(config.get("turbo_dit")) and config.get("blocks_to_swap") not in (
             None,

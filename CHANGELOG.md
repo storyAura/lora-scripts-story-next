@@ -10,8 +10,12 @@
 - 侧栏 **LoRA 训练 → Krea2**（`krea2-lora`）：在 RAW 上训 **LoRA** 或 **LoKr**，推理用 Turbo。移植 musubi-tuner 的 SingleStreamDiT / Qwen3-VL / `krea2_shift`，走现有 accelerate，不另起插件 venv。
 - LoKr 走 `lycoris.kohya` + `config/lycoris_krea2_preset.toml`，圈选 `SingleStreamDiT` 下全部 Linear。
 - 调度器齐套：固定 `shift=2.5`、分辨率感知 `krea2_shift`、`flux_shift` / `sigmoid` / `uniform`，`weighting_scheme=none`。预览仅 euler；Turbo 钉死 μ=1.15。
-- Qwen3-VL 按需导入；当前环境 transformers 过旧时给出明确错误，不升级全局 4.51.3。说明见 [`docs/krea2.md`](docs/krea2.md)。
+- 文本编码器只构建 Qwen3-VL 的语言塔（transformers `Qwen3Model`），直接跑在固定的 transformers 4.51.3 上，不升级全局依赖。说明见 [`docs/krea2.md`](docs/krea2.md)。
 - **修复** 缓存文本编码器时 `SingleStreamDiT` 没有 `.device` 导致崩溃；分词器可放本地目录，避免再访问 Hugging Face。
+- **修复** Krea2 在默认环境开不了训：transformers 4.51.3 没有 Qwen3-VL 类，加载文本编码器必抛 `Krea2TextEncoderUnavailableError`（缓存文本输出也要先加载它）。改为只加载语言塔后，有效 token 输出与 musubi-tuner 的 Qwen3-VL 逐位一致；同时移植 musubi-tuner `b3f3d65d`，显式传入后缀的 position_ids。
+- **修复** 分词器 `tokenizer_config.json` 的 `extra_special_tokens` 为列表（transformers 5.x 存法，Krea-2-Raw 的 `tokenizer/` 即是）时报 `'list' object has no attribute 'keys'`（上游 wochenlong/lora-scripts-next#416）；数据集分词与文本编码器改用同一份本地分词器，并识别 diffusers 目录结构的 `tokenizer/`。
+- **修复** FP8：表单默认只开 `fp8_base` 时整模强转 fp8（含 norm），开 `fp8_scaled` 时又会被通用 fp8 强转把量化 scale 一起转坏，30 系还会被原生 FP8 硬件检查直接拦下。现在 `fp8_base` / `fp8_scaled` 任一打开都走缩放 FP8（对齐上游的成对规则与 musubi-tuner），不再强转、不再要求原生 FP8；表单默认同时打开两项。
+- Krea2 只接受 `mixed_precision = bf16`（对齐上游），fp16 / no 开训前直接报错；fp8 / 量化版 Qwen3-VL 文本编码器给出明确的换用 bf16 提示。
 
 ### LyCORIS 4.0
 
